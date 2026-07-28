@@ -1,3 +1,4 @@
+using MassTransit;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Mind.Memory;
@@ -10,6 +11,26 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddNpgsqlDbContext<MemoryDbContext>("mind-memory-db");
 
 builder.Services.AddScoped<IMemoryStore, EfMemoryStore>();
+
+// Messaging: consume formed-memory messages off the bus. On a transient failure
+// each message is retried; if it keeps failing the broker dead-letters it, so a
+// memory is never silently dropped. Storing is idempotent, so redelivery is safe.
+var rabbitConnectionString =
+    builder.Configuration.GetConnectionString("rabbitmq")
+    ?? throw new InvalidOperationException(
+        "RabbitMQ connection string not configured. Expected the AppHost to inject 'ConnectionStrings:rabbitmq'.");
+
+builder.Services.AddMassTransit(x =>
+{
+    x.AddConsumer<MemoryFormedConsumer>();
+
+    x.UsingRabbitMq((context, cfg) =>
+    {
+        cfg.Host(new Uri(rabbitConnectionString));
+        cfg.UseMessageRetry(r => r.Interval(5, TimeSpan.FromSeconds(2)));
+        cfg.ConfigureEndpoints(context);
+    });
+});
 
 // A clickable API page (Swagger UI) so the service can be driven from a browser.
 builder.Services.AddEndpointsApiExplorer();

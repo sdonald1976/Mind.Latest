@@ -1,13 +1,12 @@
 using Microsoft.Extensions.Options;
-using Mind.Contracts;
 
 namespace Mind.Perception;
 
 /// <summary>
 /// The Mind's heartbeat: an always-on loop that lives in time. It holds an idle
 /// baseline for where it is, brackets a memory when salience departs from and
-/// returns to that baseline, forms the finished memory, and hands it to the
-/// Memory service to store.
+/// returns to that baseline, forms the finished memory, and publishes it for
+/// durable delivery to storage.
 ///
 /// Standing rule: nothing here may be allowed to silently die. Every tick and
 /// every perception is guarded, and every exception — however small — is logged.
@@ -20,7 +19,7 @@ namespace Mind.Perception;
 public sealed class Heartbeat : BackgroundService
 {
     private readonly PerceptionStream _stream;
-    private readonly IMemorySink _memories;
+    private readonly IMemoryPublisher _publisher;
     private readonly HeartbeatOptions _options;
     private readonly ILogger<Heartbeat> _logger;
 
@@ -31,12 +30,12 @@ public sealed class Heartbeat : BackgroundService
 
     public Heartbeat(
         PerceptionStream stream,
-        IMemorySink memories,
+        IMemoryPublisher publisher,
         IOptions<HeartbeatOptions> options,
         ILogger<Heartbeat> logger)
     {
         _stream = stream;
-        _memories = memories;
+        _publisher = publisher;
         _options = options.Value;
         _logger = logger;
     }
@@ -148,7 +147,7 @@ public sealed class Heartbeat : BackgroundService
         }
 
         // Clear the open slot first so a new memory can begin forming while this
-        // finished one is being handed off.
+        // finished one is being published.
         _open = null;
 
         var memory = open.ToMemory(endedAt);
@@ -159,11 +158,11 @@ public sealed class Heartbeat : BackgroundService
 
         try
         {
-            await _memories.StoreAsync(memory, cancellationToken);
+            await _publisher.PublishAsync(memory, cancellationToken);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to hand memory {MemoryId} to the Memory service.", memory.Id);
+            _logger.LogError(ex, "Failed to publish memory {MemoryId} to the bus.", memory.Id);
         }
     }
 

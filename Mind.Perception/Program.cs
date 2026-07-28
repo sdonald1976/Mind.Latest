@@ -1,6 +1,6 @@
+using MassTransit;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.Extensions.Options;
-using Mind.Contracts;
 using Mind.Perception;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -13,24 +13,26 @@ builder.Services
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
+// Messaging: publish formed memories onto the bus. The broker holds and
+// redelivers each one until Memory stores and acknowledges it. Registered
+// before the heartbeat so the bus is up before the first memory is published.
+var rabbitConnectionString =
+    builder.Configuration.GetConnectionString("rabbitmq")
+    ?? throw new InvalidOperationException(
+        "RabbitMQ connection string not configured. Expected the AppHost to inject 'ConnectionStrings:rabbitmq'.");
+
+builder.Services.AddMassTransit(x =>
+{
+    x.UsingRabbitMq((_, cfg) =>
+    {
+        cfg.Host(new Uri(rabbitConnectionString));
+    });
+});
+
+builder.Services.AddSingleton<IMemoryPublisher, BusMemoryPublisher>();
+
 builder.Services.AddSingleton<PerceptionStream>();
 builder.Services.AddHostedService<Heartbeat>();
-
-// Where the Memory service lives. When run under the AppHost, its address is
-// injected by .WithReference(memory) as an Aspire service-discovery entry; a
-// plain config value is honoured too for running Perception on its own.
-var memoryBaseUrl =
-    builder.Configuration["services:mind-memory:http:0"]
-    ?? builder.Configuration["services:mind-memory:https:0"]
-    ?? builder.Configuration["MemoryService:BaseUrl"]
-    ?? throw new InvalidOperationException(
-        "Memory service address not configured. Expected the AppHost to inject " +
-        "'services:mind-memory:*', or a 'MemoryService:BaseUrl' setting.");
-
-builder.Services.AddHttpClient<IMemorySink, HttpMemorySink>(client =>
-{
-    client.BaseAddress = new Uri(memoryBaseUrl);
-});
 
 // A clickable API page (Swagger UI) so the service can be driven from a browser.
 builder.Services.AddEndpointsApiExplorer();
@@ -87,7 +89,7 @@ app.MapPost("/perceive", (PerceiveRequest request, PerceptionStream stream, ILog
         return Results.BadRequest(new { error = "'what' is required." });
     }
 
-    var perception = new Perception(
+    var perception = new Mind.Contracts.Perception(
         What: request.What,
         At: DateTimeOffset.UtcNow,
         Intensity: request.Intensity ?? 1.0,

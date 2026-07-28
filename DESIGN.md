@@ -76,37 +76,48 @@ types by copy — they share them through one contracts project, and nothing
 depends back on a service.
 
 ```
-Mind.AppHost      Orchestrates the services; wires Perception -> Memory.
-Mind.Contracts    Shared vocabulary: Perception, Memory, IMemorySink.
+Mind.AppHost      Orchestrates everything: RabbitMQ, Postgres, the services.
+Mind.Contracts    Shared vocabulary: Perception, Memory, MemoryFormed (message).
                   No dependencies; every service references it.
 Mind.Perception   Always-on. Lives in time: the heartbeat, the place-baseline,
-                  salience. Forms a finished memory and hands it off.
-Mind.Memory       Receives finished memories, stores them, serves recall.
+                  salience. Forms a finished memory and publishes it.
+Mind.Memory       Consumes formed-memory messages, stores them, serves recall.
 ```
 
 - **Perception forms memories; Memory stores and recalls them.** All
   baseline/idle/salience knowledge stays in Perception. Memory is a clean
   store-and-recall service, free to grow its own way (persistence, indexing).
-- **They talk over HTTP**, wired by the AppHost's reference injection. We are
-  *not* pulling in the full telemetry/resilience `ServiceDefaults` stack yet —
-  that is real machinery we'll add as its own understood piece when we want it,
-  not smuggle in now.
+- **They talk over a message bus, not directly.** Perception publishes a
+  `MemoryFormed` message to RabbitMQ; Memory consumes it. The two never
+  reference each other — the broker decouples them, and future services (facts,
+  reasoning) can subscribe to the same memory stream.
+- **Delivery is guaranteed, confirmed, and retried.** The broker holds a message
+  until Memory stores it and acknowledges; a failed consume is retried and then
+  dead-lettered rather than dropped; storing is idempotent (dedupe by Id) so a
+  redelivery never double-stores. Nothing experienced is silently lost.
+- **Messaging library:** MassTransit **v8** (free/open); v9 moves to a commercial
+  license, so we stay on v8. It sits behind our own `IMemoryPublisher` and the
+  consumer, so the library can be swapped without touching the domain.
+- We are still *not* pulling in the full telemetry/resilience `ServiceDefaults`
+  stack — that's a deliberate later piece, not smuggled in now.
 
 ## Build order
 
 1. **The heartbeat** *(built — `Mind.Perception`)* — always-on, runs in time
    (500ms tick), holds a place-baseline, brackets a memory as salience rises
-   and falls (5s idle to close), forms the finished memory and hands it to the
-   Memory service. Poke it with `POST /perceive` on Perception; read
-   `GET /memories` on Memory. Salience is deliberately naive for now (any
-   perception is salient); baseline-relative change detection is the first
-   refinement we make *inside* this piece before moving on.
-2. **Memory storage** *(hardened — `Mind.Memory`)* — memories are now durable:
-   Postgres (an Aspire container with a data volume) via EF Core, each memory a
-   row with its perceptions in a jsonb column. Survives restarts. Schema is
-   created with `EnsureCreated` for now; we switch to EF migrations the first
-   time the schema changes. Richer recall (by place, time, later similarity)
-   grows here.
+   and falls (5s idle to close), forms the finished memory and publishes it to
+   the bus. Poke it with `POST /perceive` on Perception; read `GET /memories`
+   on Memory. Salience is deliberately naive for now (any perception is
+   salient); baseline-relative change detection is the first refinement we make
+   *inside* this piece before moving on.
+2. **Memory storage + reliable delivery** *(hardened — `Mind.Memory`)* —
+   memories are durable in Postgres (an Aspire container with a data volume) via
+   EF Core, each memory a row with its perceptions in a jsonb column; survives
+   restarts. Delivery from Perception is guaranteed via RabbitMQ: published,
+   confirmed on store, retried, dead-lettered on repeated failure, and
+   idempotent on receipt. Schema is created with `EnsureCreated` for now; we
+   switch to EF migrations the first time the schema changes. Richer recall (by
+   place, time, later similarity) grows here.
 3. Fact distillation — turning memories into facts (where learning lives).
 4. Onward from there, one piece at a time.
 
@@ -120,3 +131,7 @@ Mind.Memory       Receives finished memories, stores them, serves recall.
 - **Reshaping how it responds** from what it has learned (continual learning).
 - **EF migrations for Memory** — replace `EnsureCreated` with proper migrations
   once the memory schema starts to evolve.
+- **Producer-side transactional outbox** — the broker guarantees delivery once a
+  memory is *published*; a crash in the tiny window between forming a memory and
+  publishing it would still lose that one. MassTransit's outbox closes that gap;
+  add it if that window ever matters.
