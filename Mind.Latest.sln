@@ -5,6 +5,8 @@ VisualStudioVersion = 17.14.37216.2 d17.14
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mind.AppHost", "Mind.AppHost\Mind.AppHost.csproj", "{D781CAB7-90E8-49F4-851C-D663D2B8F340}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mind.Core", "Mind.Core\Mind.Core.csproj", "{0876C6D4-87DE-4B08-8330-037242F826D3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +17,10 @@ Global
 		{D781CAB7-90E8-49F4-851C-D663D2B8F340}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D781CAB7-90E8-49F4-851C-D663D2B8F340}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D781CAB7-90E8-49F4-851C-D663D2B8F340}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0876C6D4-87DE-4B08-8330-037242F826D3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0876C6D4-87DE-4B08-8330-037242F826D3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0876C6D4-87DE-4B08-8330-037242F826D3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0876C6D4-87DE-4B08-8330-037242F826D3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

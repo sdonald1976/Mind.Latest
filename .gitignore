@@ -3,5 +3,11 @@
 ################################################################################
 
 /.vs
-/Mind.AppHost/bin
-/Mind.AppHost/obj
+
+# Build output for every project (current and future).
+[Bb]in/
+[Oo]bj/
+
+# User-specific / secrets — never commit.
+*.user
+appsettings.*.local.json

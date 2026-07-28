@@ -17,6 +17,17 @@ survives even if a machine, a session, or a rewrite does not.
 - **Push back is part of the deal.** Problems get named before we build, not
   after. No rushing, no reflexive agreement.
 
+## Standing engineering rules
+
+These hold for every piece, from the first line. We want this tight out of the gate.
+
+- **Configurable, not hard-coded.** Anything that shapes behaviour (timings,
+  thresholds, place, limits) is bound from configuration with sane defaults —
+  no magic numbers buried in code.
+- **Log everything; swallow nothing.** Lifecycle and salient transitions are
+  logged. Every exception — no matter how small — is caught and logged. The
+  always-on loop is never allowed to die silently.
+
 ## What we're building toward
 
 A mind that does, non-organically, what a human mind does — without needing
@@ -59,10 +70,14 @@ are frozen the moment training ends.
 
 ## Build order
 
-1. **The heartbeat** *(first piece)* — a loop that runs in time, holds a
-   place-baseline, and opens/closes a memory as salience rises and falls, and
-   emits that memory (perceptions + start/end + place) when it closes.
-   No model, no database yet — something we can watch breathe.
+1. **The heartbeat** *(first piece — built, in `Mind.Core`)* — an always-on
+   worker in the Aspire AppHost that runs in time (500ms tick), holds a
+   place-baseline, opens/closes a memory as salience rises and falls (5s idle
+   to close), and emits that memory (perceptions + start/end + place) when it
+   closes. No model, no database yet — something we can watch breathe. Poke it
+   with `POST /perceive`; read `GET /memories`. Salience is deliberately naive
+   for now (any perception is salient); baseline-relative change detection is
+   the first refinement we make *inside* this piece before moving on.
 2. Memory storage — where emitted memories live and how they're recalled.
 3. Fact distillation — turning memories into facts (where learning lives).
 4. Onward from there, one piece at a time.
