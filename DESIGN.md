@@ -68,6 +68,29 @@ are frozen the moment training ends.
    *change from that baseline*. Because the baseline is tied to place, a
    memory's origin includes *where*, not only *when*.
 
+7. **Salience is surprise against an adapting baseline — and it needs a real
+   sense to be real.** The baseline is not a configured list of expected
+   things; it's an *adapting* estimate the Mind holds of its current stream (a
+   slow running average — a leaky integrator). Salience is *departure* from that
+   estimate: a spike above the baseline. A memory brackets from the spike until
+   things settle back — decision 5, now driven by a measured signal instead of
+   "any perception counts."
+
+   On a stream of typed pokes there is no hum to depart from, so the baseline
+   is make-believe. It becomes real only on a continuous sense. So Perception
+   grows its **first real sense: audio.** A fixed, dumb front-end (a cochlea:
+   window → FFT → mel → log) reduces sound to a small vector the Mind can hold a
+   baseline against. The text `POST /perceive` stays as a manual test poke, not
+   the real perception path.
+
+   *Reference, not blueprint.* An earlier exploration (`C:\Source\SyntheticMind`)
+   proved this exact mechanism — *"surprise is novelty, not loudness; silence is
+   silent"* — and the fixed cochlea/retina front-ends that make it work. We mine
+   its *principle* (dumb front-end → small vector → surprise-vs-baseline =
+   salience) and re-tune everything ourselves, per input. We do **not** port its
+   learned predictive hierarchy, cross-modal binder, or the rest — that code had
+   real problems and is not this build.
+
 ## Structure
 
 We separate concerns into their own services early, while it's cheap, so each
@@ -101,15 +124,51 @@ Mind.Memory       Consumes formed-memory messages, stores them, serves recall.
 - We are still *not* pulling in the full telemetry/resilience `ServiceDefaults`
   stack — that's a deliberate later piece, not smuggled in now.
 
+## The first sense: audio (building now)
+
+Audio is a continuous stream, not discrete events, so it runs on its own fast
+loop — separate from the 500ms heartbeat.
+
+- **Source (swappable, mic never designed out).** A file today — an MP4's audio
+  track, ripped to 16kHz mono WAV with `ffmpeg -vn -ac 1 -ar 16000` — a live
+  microphone later, both behind one source seam so neither is privileged. Same
+  bytes in, same cochlea after. (First tuning corpus: `SyntheticMind\youtube-tuner`,
+  one file to start.)
+- **Front-end (fixed, dumb).** The cochlea turns each ~10ms hop into a small mel
+  vector (~20 numbers). It learns nothing; it just refuses to hand the Mind raw
+  waveform. Its parameters are config, tuned per input.
+- **Baseline + salience.** A slow leaky running average over the mel stream is
+  the place baseline; salience is a spike above it (the departure magnitude).
+  The leak is deliberately *slow* — a fast baseline swallows the very thing it
+  should notice the moment it repeats (the "mean-tracking trap" the prior lab
+  hit and named). Leak rate and spike ratio are config.
+- **Handoff.** The audio loop owns the baseline and emits only *salient
+  episodes* upward — it never ships ~100 vectors/second at the heartbeat. Each
+  episode becomes a `Perception` whose `Intensity` finally carries real meaning
+  (the departure magnitude) and whose `Source` names the sense. The heartbeat's
+  job is unchanged: bracket nearby salient perceptions into a memory, close on
+  return to idle, publish it to the bus.
+
+What a `Perception`'s `What` *says* is deliberately coarse at first: we detect
+*that* something departed and *how much*, not yet *what it was*. Naming — stable,
+recurring sound-units — is a later piece (form before meaning).
+
+Two tests, not to be confused. This corpus (produced kids' videos, near-
+continuously active) tunes the *mechanism* — a baseline that adapts to the show's
+texture and spikes on real onsets and transitions. A live mic in a quiet room
+later proves the *concept* in its purest form: the steady hum of a place, and a
+genuine departure from it.
+
 ## Build order
 
 1. **The heartbeat** *(built — `Mind.Perception`)* — always-on, runs in time
    (500ms tick), holds a place-baseline, brackets a memory as salience rises
    and falls (5s idle to close), forms the finished memory and publishes it to
    the bus. Poke it with `POST /perceive` on Perception; read `GET /memories`
-   on Memory. Salience is deliberately naive for now (any perception is
-   salient); baseline-relative change detection is the first refinement we make
-   *inside* this piece before moving on.
+   on Memory. Salience was deliberately naive at first (any perception is
+   salient). That refinement grew: a real baseline needs a real signal, so it
+   became the first sense — see *The first sense: audio* — and salience is now
+   surprise against an adapting baseline.
 2. **Memory storage + reliable delivery** *(hardened — `Mind.Memory`)* —
    memories are durable in Postgres (an Aspire container with a data volume) via
    EF Core, each memory a row with its perceptions in a jsonb column; survives
@@ -118,15 +177,26 @@ Mind.Memory       Consumes formed-memory messages, stores them, serves recall.
    idempotent on receipt. Schema is created with `EnsureCreated` for now; we
    switch to EF migrations the first time the schema changes. Richer recall (by
    place, time, later similarity) grows here.
-3. Fact distillation — turning memories into facts (where learning lives).
-4. Onward from there, one piece at a time.
+3. **Perception's first sense — audio place-baseline** *(building now)* — bring
+   in audio from an MP4's track (file first, mic-ready), reduce it through a
+   fixed cochlea, hold an adapting place-baseline, and make salience a spike
+   above it. Tune the whole chain offline against one file before widening. This
+   is the piece that makes decision 7 real. See *The first sense: audio*.
+4. Fact distillation — turning memories into facts (where learning lives).
+5. Onward from there, one piece at a time.
 
 ## The "later" shelf (deferred, not forgotten)
 
 - **Self-caused vs. world-caused change** — the Mind telling "I moved" apart
   from "the world moved" (so its own actions don't read as salient events).
 - **Facts / semantic knowledge** and the distillation machine that makes them.
-- **Perception beyond text** — video, audio, and richer senses.
+- **More senses — video, then camera** — each its own fixed front-end, tuned
+  per input, one sense at a time (never all at once). Audio comes first as its
+  own piece; these follow the same way.
+- **Live audio** — swap the file source for a microphone behind the same seam,
+  then the quiet-room place-baseline test (decision 7's purest form).
+- **Stable sound-units / naming** — moving audio salience from *that something
+  happened* to *what recurring thing it was* (form → meaning).
 - **Correction & trust** mechanics beyond the basics.
 - **Reshaping how it responds** from what it has learned (continual learning).
 - **EF migrations for Memory** — replace `EnsureCreated` with proper migrations
