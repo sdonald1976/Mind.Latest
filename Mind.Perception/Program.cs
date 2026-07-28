@@ -32,6 +32,10 @@ builder.Services.AddHttpClient<IMemorySink, HttpMemorySink>(client =>
     client.BaseAddress = new Uri(memoryBaseUrl);
 });
 
+// A clickable API page (Swagger UI) so the service can be driven from a browser.
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
 var app = builder.Build();
 
 // --- Catch everything, log everything. Standing rule: no exception, however
@@ -56,6 +60,13 @@ app.UseExceptionHandler(handler => handler.Run(async context =>
     context.Response.StatusCode = StatusCodes.Status500InternalServerError;
     await context.Response.WriteAsJsonAsync(new { error = "internal error" });
 }));
+
+// Swagger UI at /swagger while developing.
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 
 // --- Endpoints: the crudest possible "world" that can poke the Mind. This is a
 //     stand-in for real senses, not throwaway — it is how the world feeds it. ---

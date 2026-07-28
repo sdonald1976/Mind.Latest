@@ -11,6 +11,10 @@ builder.AddNpgsqlDbContext<MemoryDbContext>("mind-memory-db");
 
 builder.Services.AddScoped<IMemoryStore, EfMemoryStore>();
 
+// A clickable API page (Swagger UI) so the service can be driven from a browser.
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
 var app = builder.Build();
 
 // --- Catch everything, log everything. Standing rule: no exception, however
@@ -52,6 +56,13 @@ await using (var scope = app.Services.CreateAsyncScope())
         log.LogCritical(ex, "Failed to ensure the memory database exists.");
         throw;
     }
+}
+
+// Swagger UI at /swagger while developing.
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
 }
 
 // --- Endpoints. ---
