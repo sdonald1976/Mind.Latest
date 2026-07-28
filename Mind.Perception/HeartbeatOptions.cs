@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace Mind.Core;
+namespace Mind.Perception;
 
 /// <summary>
 /// Configuration for the Mind's heartbeat. Everything the loop's behaviour

@@ -68,17 +68,41 @@ are frozen the moment training ends.
    *change from that baseline*. Because the baseline is tied to place, a
    memory's origin includes *where*, not only *when*.
 
+## Structure
+
+We separate concerns into their own services early, while it's cheap, so each
+can be tweaked and extended without tangling the others. Services never share
+types by copy — they share them through one contracts project, and nothing
+depends back on a service.
+
+```
+Mind.AppHost      Orchestrates the services; wires Perception -> Memory.
+Mind.Contracts    Shared vocabulary: Perception, Memory, IMemorySink.
+                  No dependencies; every service references it.
+Mind.Perception   Always-on. Lives in time: the heartbeat, the place-baseline,
+                  salience. Forms a finished memory and hands it off.
+Mind.Memory       Receives finished memories, stores them, serves recall.
+```
+
+- **Perception forms memories; Memory stores and recalls them.** All
+  baseline/idle/salience knowledge stays in Perception. Memory is a clean
+  store-and-recall service, free to grow its own way (persistence, indexing).
+- **They talk over HTTP**, wired by the AppHost's reference injection. We are
+  *not* pulling in the full telemetry/resilience `ServiceDefaults` stack yet —
+  that is real machinery we'll add as its own understood piece when we want it,
+  not smuggle in now.
+
 ## Build order
 
-1. **The heartbeat** *(first piece — built, in `Mind.Core`)* — an always-on
-   worker in the Aspire AppHost that runs in time (500ms tick), holds a
-   place-baseline, opens/closes a memory as salience rises and falls (5s idle
-   to close), and emits that memory (perceptions + start/end + place) when it
-   closes. No model, no database yet — something we can watch breathe. Poke it
-   with `POST /perceive`; read `GET /memories`. Salience is deliberately naive
-   for now (any perception is salient); baseline-relative change detection is
-   the first refinement we make *inside* this piece before moving on.
-2. Memory storage — where emitted memories live and how they're recalled.
+1. **The heartbeat** *(built — `Mind.Perception`)* — always-on, runs in time
+   (500ms tick), holds a place-baseline, brackets a memory as salience rises
+   and falls (5s idle to close), forms the finished memory and hands it to the
+   Memory service. Poke it with `POST /perceive` on Perception; read
+   `GET /memories` on Memory. Salience is deliberately naive for now (any
+   perception is salient); baseline-relative change detection is the first
+   refinement we make *inside* this piece before moving on.
+2. **Memory storage** *(started — `Mind.Memory`)* — receives and holds memories
+   (in-memory today); durable persistence and richer recall grow here next.
 3. Fact distillation — turning memories into facts (where learning lives).
 4. Onward from there, one piece at a time.
 

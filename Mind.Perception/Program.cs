@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.Extensions.Options;
-using Mind.Core;
+using Mind.Contracts;
+using Mind.Perception;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,16 +13,30 @@ builder.Services
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
-// --- The Mind's moving parts. ---
 builder.Services.AddSingleton<PerceptionStream>();
-builder.Services.AddSingleton<MemoryStore>();
 builder.Services.AddHostedService<Heartbeat>();
+
+// Where the Memory service lives. When run under the AppHost, its address is
+// injected by .WithReference(memory) as an Aspire service-discovery entry; a
+// plain config value is honoured too for running Perception on its own.
+var memoryBaseUrl =
+    builder.Configuration["services:mind-memory:http:0"]
+    ?? builder.Configuration["services:mind-memory:https:0"]
+    ?? builder.Configuration["MemoryService:BaseUrl"]
+    ?? throw new InvalidOperationException(
+        "Memory service address not configured. Expected the AppHost to inject " +
+        "'services:mind-memory:*', or a 'MemoryService:BaseUrl' setting.");
+
+builder.Services.AddHttpClient<IMemorySink, HttpMemorySink>(client =>
+{
+    client.BaseAddress = new Uri(memoryBaseUrl);
+});
 
 var app = builder.Build();
 
 // --- Catch everything, log everything. Standing rule: no exception, however
 //     small, goes unlogged. ---
-var log = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Mind.Core");
+var log = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Mind.Perception");
 
 AppDomain.CurrentDomain.UnhandledException += (_, e) =>
     log.LogCritical(e.ExceptionObject as Exception, "Unhandled exception escaped the app domain.");
@@ -42,16 +57,15 @@ app.UseExceptionHandler(handler => handler.Run(async context =>
     await context.Response.WriteAsJsonAsync(new { error = "internal error" });
 }));
 
-// --- Endpoints: the crudest possible "world" that can poke the Mind. This is
-//     a stand-in for real senses, not throwaway — it is how the world feeds it. ---
+// --- Endpoints: the crudest possible "world" that can poke the Mind. This is a
+//     stand-in for real senses, not throwaway — it is how the world feeds it. ---
 
-// Where am I, and what am I doing right now?
-app.MapGet("/", (IOptions<HeartbeatOptions> options, MemoryStore memories) => Results.Ok(new
+// Where am I, and how am I tuned right now?
+app.MapGet("/", (IOptions<HeartbeatOptions> options) => Results.Ok(new
 {
     place = options.Value.Place,
     tickMs = options.Value.TickIntervalMs,
     idleMs = options.Value.IdleTimeoutMs,
-    memoriesFormed = memories.Count,
 }));
 
 // Something happened to the Mind.
@@ -76,9 +90,6 @@ app.MapPost("/perceive", (PerceiveRequest request, PerceptionStream stream, ILog
 
     return Results.Accepted();
 });
-
-// What has the Mind remembered lately?
-app.MapGet("/memories", (MemoryStore memories) => Results.Ok(memories.Recent));
 
 app.Run();
 

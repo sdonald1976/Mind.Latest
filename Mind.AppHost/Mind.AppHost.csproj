@@ -15,7 +15,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Mind.Core\Mind.Core.csproj" />
+    <ProjectReference Include="..\Mind.Perception\Mind.Perception.csproj" />
+    <ProjectReference Include="..\Mind.Memory\Mind.Memory.csproj" />
   </ItemGroup>
 
 </Project>

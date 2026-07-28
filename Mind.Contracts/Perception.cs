@@ -1,4 +1,4 @@
-namespace Mind.Core;
+namespace Mind.Contracts;
 
 /// <summary>
 /// A single thing taken in — the smallest unit of experience. A memory is a
