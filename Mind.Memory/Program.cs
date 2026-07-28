@@ -1,10 +1,15 @@
 using Microsoft.AspNetCore.Diagnostics;
-using Mind.Contracts;
+using Microsoft.EntityFrameworkCore;
 using Mind.Memory;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSingleton<MemoryStore>();
+// Postgres-backed persistence. The connection is supplied by the AppHost via
+// the "mind-memory-db" reference; this Aspire integration also adds retries,
+// health checks, and telemetry for the database.
+builder.AddNpgsqlDbContext<MemoryDbContext>("mind-memory-db");
+
+builder.Services.AddScoped<IMemoryStore, EfMemoryStore>();
 
 var app = builder.Build();
 
@@ -31,15 +36,34 @@ app.UseExceptionHandler(handler => handler.Run(async context =>
     await context.Response.WriteAsJsonAsync(new { error = "internal error" });
 }));
 
+// Make sure the schema exists before we serve requests. EnsureCreated is fine
+// while there is a single table; we move to EF migrations once the schema
+// starts to evolve (see DESIGN.md).
+await using (var scope = app.Services.CreateAsyncScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<MemoryDbContext>();
+    try
+    {
+        await db.Database.EnsureCreatedAsync();
+        log.LogInformation("Memory database ready.");
+    }
+    catch (Exception ex)
+    {
+        log.LogCritical(ex, "Failed to ensure the memory database exists.");
+        throw;
+    }
+}
+
 // --- Endpoints. ---
 
 // How many memories are held right now?
-app.MapGet("/", (MemoryStore memories) => Results.Ok(new { memoriesFormed = memories.Count }));
+app.MapGet("/", async (IMemoryStore store) =>
+    Results.Ok(new { memoriesFormed = await store.CountAsync() }));
 
 // Receive a finished memory from the Perception service.
-app.MapPost("/memories", (Memory memory, MemoryStore store, ILogger<Program> logger) =>
+app.MapPost("/memories", async (Mind.Contracts.Memory memory, IMemoryStore store, ILogger<Program> logger) =>
 {
-    store.Add(memory);
+    await store.AddAsync(memory);
     logger.LogInformation(
         "Stored memory {MemoryId} from {Place}: {Count} perception(s) over {Duration}.",
         memory.Id, memory.Place, memory.Perceptions.Count, memory.Duration);
@@ -47,6 +71,7 @@ app.MapPost("/memories", (Memory memory, MemoryStore store, ILogger<Program> log
 });
 
 // Recall the most recent memories.
-app.MapGet("/memories", (MemoryStore store) => Results.Ok(store.Recent));
+app.MapGet("/memories", async (IMemoryStore store) =>
+    Results.Ok(await store.RecentAsync(100)));
 
 app.Run();

@@ -101,8 +101,12 @@ Mind.Memory       Receives finished memories, stores them, serves recall.
    `GET /memories` on Memory. Salience is deliberately naive for now (any
    perception is salient); baseline-relative change detection is the first
    refinement we make *inside* this piece before moving on.
-2. **Memory storage** *(started — `Mind.Memory`)* — receives and holds memories
-   (in-memory today); durable persistence and richer recall grow here next.
+2. **Memory storage** *(hardened — `Mind.Memory`)* — memories are now durable:
+   Postgres (an Aspire container with a data volume) via EF Core, each memory a
+   row with its perceptions in a jsonb column. Survives restarts. Schema is
+   created with `EnsureCreated` for now; we switch to EF migrations the first
+   time the schema changes. Richer recall (by place, time, later similarity)
+   grows here.
 3. Fact distillation — turning memories into facts (where learning lives).
 4. Onward from there, one piece at a time.
 
@@ -114,3 +118,5 @@ Mind.Memory       Receives finished memories, stores them, serves recall.
 - **Perception beyond text** — video, audio, and richer senses.
 - **Correction & trust** mechanics beyond the basics.
 - **Reshaping how it responds** from what it has learned (continual learning).
+- **EF migrations for Memory** — replace `EnsureCreated` with proper migrations
+  once the memory schema starts to evolve.
