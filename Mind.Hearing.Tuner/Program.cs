@@ -1,22 +1,37 @@
 using System.Globalization;
 using Mind.Hearing;
 
-// A tiny offline bench for the Mind's hearing. Point it at a media file (MP4 or WAV)
-// and it reports what the Mind would take in — proving the ingestion path
-// (ffmpeg -> WAV -> mono samples) on real material before any of it is wired into
-// the always-on service. Increment 1: just get sound in and look at it.
+// A tiny offline bench for the Mind's hearing. Point it at a media file (MP4 or WAV) and it
+// shows what the Mind takes in — the ingestion, the cochlea's mel stream, and the salient
+// episodes the place-baseline brackets — so the whole chain can be seen and tuned on real
+// material before it is wired into the always-on service.
 //
 //   Mind.Hearing.Tuner <media-file> [seconds] [sampleRate]
+//        [--leak=0.05] [--restingLeak=0.005] [--ratio=2.5] [--floor=0.05] [--hold=0.4]
 
-if (args.Length == 0)
+var positionals = args.Where(a => !a.StartsWith("--", StringComparison.Ordinal)).ToArray();
+if (positionals.Length == 0)
 {
-    Console.Error.WriteLine("usage: Mind.Hearing.Tuner <media-file> [seconds] [sampleRate]");
+    Console.Error.WriteLine(
+        "usage: Mind.Hearing.Tuner <media-file> [seconds] [sampleRate] " +
+        "[--leak=] [--restingLeak=] [--ratio=] [--floor=] [--hold=]");
     return 1;
 }
 
-var path = args[0];
-double? seconds = args.Length > 1 && double.TryParse(args[1], CultureInfo.InvariantCulture, out var s) ? s : null;
-var rate = args.Length > 2 && int.TryParse(args[2], out var r) ? r : 16_000;
+string? Flag(string name)
+{
+    var prefix = $"--{name}=";
+    return args.FirstOrDefault(a => a.StartsWith(prefix, StringComparison.Ordinal))?[prefix.Length..];
+}
+
+double FlagOr(string name, double fallback) =>
+    Flag(name) is { } v && double.TryParse(v, CultureInfo.InvariantCulture, out var d) ? d : fallback;
+
+var path = positionals[0];
+double? seconds = positionals.Length > 1 && double.TryParse(positionals[1], CultureInfo.InvariantCulture, out var s)
+    ? s
+    : null;
+var rate = positionals.Length > 2 && int.TryParse(positionals[2], out var r) ? r : 16_000;
 
 Console.WriteLine($"Loading: {Path.GetFileName(path)}");
 Console.WriteLine($"  target rate : {rate} Hz{(seconds is { } limit ? $"   (first {limit:0.#}s)" : "")}");
@@ -54,38 +69,8 @@ Console.WriteLine($"  duration    : {source.Duration:hh\\:mm\\:ss\\.fff}");
 Console.WriteLine($"  peak        : {peak:0.000}");
 Console.WriteLine($"  rms         : {rms:0.000}");
 
-// A coarse one-row-per-second loudness envelope, so we can *see* the shape of the
-// sound over time (speech vs. song vs. quiet). This is not salience yet — salience is
-// change from a baseline, which comes with the cochlea and the place-baseline — but it
-// is the first look at where salience will live.
-Console.WriteLine();
-Console.WriteLine("per-second loudness (rms):");
-
-var second = 0;
-for (var i = 0; i < count; i += rate)
-{
-    var end = Math.Min(i + rate, count);
-    var windowSquares = 0.0;
-    for (var j = i; j < end; j++)
-    {
-        windowSquares += (double)samples[j] * samples[j];
-    }
-
-    var windowRms = Math.Sqrt(windowSquares / (end - i));
-    var bar = new string('#', (int)Math.Clamp(windowRms * 100, 0, 60));
-    Console.WriteLine($"  {second,4}s | {windowRms:0.000} {bar}");
-
-    second++;
-    if (second > 120)
-    {
-        Console.WriteLine("  ... (truncated at 120s)");
-        break;
-    }
-}
-
-// --- The cochlea: samples -> mel-vector stream, the small signal the place-baseline
-//     will sit against. Loudness (above) can't tell a loud-but-expected song from a
-//     novel sound; the mel bands are what will. ---
+// --- The cochlea: samples -> mel-vector stream, the small signal the place-baseline sits
+//     against. Loudness alone can't tell a loud-but-expected song from a novel sound. ---
 source.Reset();
 var cochlea = new Cochlea(new CochleaOptions { SampleRate = rate });
 var stream = new HearingStream(source, cochlea);
@@ -101,11 +86,56 @@ Console.WriteLine(
     $"cochlea: {cochlea.Bands} mel bands, {cochlea.FftSize}-pt FFT, hop {cochlea.HopSize} " +
     $"(~{stream.SecondsPerFrame * 1000:0} ms/frame) -> {frames.Count:N0} frames");
 
+// --- The place-baseline: predict the sound, be surprised by what departs, bracket the
+//     episodes. This is the point of the whole piece. Knobs come from flags so we can sweep. ---
+var options = new PlaceBaselineOptions
+{
+    ExpectationLeak = FlagOr("leak", new PlaceBaselineOptions().ExpectationLeak),
+    RestingLeak = FlagOr("restingLeak", new PlaceBaselineOptions().RestingLeak),
+    SpikeRatio = FlagOr("ratio", new PlaceBaselineOptions().SpikeRatio),
+    Floor = FlagOr("floor", new PlaceBaselineOptions().Floor),
+    HoldSeconds = FlagOr("hold", new PlaceBaselineOptions().HoldSeconds),
+};
+
+var detector = new PlaceBaseline(options, stream.SecondsPerFrame);
+var episodes = new List<SalientEpisode>();
+var surprises = new double[frames.Count];
+for (var i = 0; i < frames.Count; i++)
+{
+    if (detector.Observe(frames[i]) is { } episode)
+    {
+        episodes.Add(episode);
+    }
+    surprises[i] = detector.LastSurprise;
+}
+if (detector.Flush() is { } tail)
+{
+    episodes.Add(tail);
+}
+
+double minSurprise = double.MaxValue, maxSurprise = 0, sumSurprise = 0;
+foreach (var value in surprises)
+{
+    if (value < minSurprise) minSurprise = value;
+    if (value > maxSurprise) maxSurprise = value;
+    sumSurprise += value;
+}
+if (surprises.Length == 0) minSurprise = 0;
+
+Console.WriteLine();
+Console.WriteLine(
+    $"place-baseline: leak {options.ExpectationLeak}, restingLeak {options.RestingLeak}, " +
+    $"spike x{options.SpikeRatio}, floor {options.Floor}, hold {options.HoldSeconds}s");
+Console.WriteLine(
+    $"  surprise: min {minSurprise:0.000}  mean {(surprises.Length > 0 ? sumSurprise / surprises.Length : 0):0.000}  " +
+    $"max {maxSurprise:0.000}   -> {episodes.Count} salient episode(s)");
+
 if (frames.Count > 0)
 {
-    // Aggregate to ~0.5s rows and shade each band by its share of the run's peak, so the
-    // structure is visible: low bands light up for voice and song, high bands for
-    // consonants and effects, and quiet stretches go dark.
+    // Aggregate to ~0.5s rows and shade each band by its share of the run's peak, so structure
+    // is visible: low bands light up for voice and song, high bands for consonants and effects,
+    // quiet stretches go dark. Show each row's mean surprise and mark rows inside a salient
+    // episode, so we can see whether salience fires on the real onsets and rests in the gaps.
     var framesPerRow = Math.Max(1, (int)Math.Round(0.5 / stream.SecondsPerFrame));
     var bands = cochlea.Bands;
 
@@ -146,13 +176,40 @@ if (frames.Count > 0)
             line[b] = ramp[index];
         }
 
-        Console.WriteLine($"  {row * 0.5,5:0.0}s |{new string(line)}|");
+        var rowStart = i * stream.SecondsPerFrame;
+        var rowEnd = end * stream.SecondsPerFrame;
+        var surprise = 0.0;
+        for (var j = i; j < end; j++)
+        {
+            surprise += surprises[j];
+        }
+        surprise /= end - i;
+
+        var salient = episodes.Any(e => e.Start.TotalSeconds < rowEnd && e.End.TotalSeconds >= rowStart);
+        var marker = salient ? " <<<" : "";
+
+        Console.WriteLine($"  {row * 0.5,5:0.0}s |{new string(line)}| s={surprise:0.000}{marker}");
         row++;
         if (row > 60)
         {
             Console.WriteLine("  ... (truncated)");
             break;
         }
+    }
+}
+
+// The episodes themselves — start, end, how strong, how long. These are what become salient
+// perceptions when the sense is graduated into the always-on service.
+if (episodes.Count > 0)
+{
+    Console.WriteLine();
+    Console.WriteLine($"salient episodes ({episodes.Count}):");
+    foreach (var episode in episodes)
+    {
+        Console.WriteLine(
+            $"  [{episode.Start.TotalSeconds,6:0.0}s -> {episode.End.TotalSeconds,6:0.0}s] " +
+            $"peak {episode.PeakSalience:0.000}  mean {episode.MeanSalience:0.000}  " +
+            $"{episode.Duration.TotalSeconds:0.0}s ({episode.Frames} frames)");
     }
 }
 
