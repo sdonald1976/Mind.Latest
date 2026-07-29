@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Mind.Hearing.Tuner": {
+      "commandName": "Project",
+      "commandLineArgs": "\"C:\\Users\\ScottDonald\\Downloads\\big_buck_bunny.mp4\" 60 minEpisode=0.08"
+    }
+  }
+}

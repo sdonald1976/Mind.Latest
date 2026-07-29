@@ -7,9 +7,8 @@ var rabbitmq = builder.AddRabbitMQ("rabbitmq")
     .WithDataVolume()
     .WithManagementPlugin();
 
-// Postgres: durable home for the Mind's memories.
-var postgres = builder.AddPostgres("postgres")
-    .WithDataVolume();
+var pgPassword = builder.AddParameter("postgres-password", secret: true);
+var postgres = builder.AddPostgres("postgres", password: pgPassword).WithDataVolume();
 
 var memoryDb = postgres.AddDatabase("mind-memory-db");
 
