@@ -177,11 +177,17 @@ genuine departure from it.
    idempotent on receipt. Schema is created with `EnsureCreated` for now; we
    switch to EF migrations the first time the schema changes. Richer recall (by
    place, time, later similarity) grows here.
-3. **Perception's first sense — audio place-baseline** *(building now)* — bring
-   in audio from an MP4's track (file first, mic-ready), reduce it through a
-   fixed cochlea, hold an adapting place-baseline, and make salience a spike
-   above it. Tune the whole chain offline against one file before widening. This
-   is the piece that makes decision 7 real. See *The first sense: audio*.
+3. **Perception's first sense — audio place-baseline** *(built — `Mind.Hearing`,
+   `AudioSense`)* — audio comes in from an MP4's track (file first, mic-ready)
+   through the `Mind.Hearing` library: a fixed cochlea reduces it to a mel stream,
+   an adapting place-baseline holds the expected hum, and salience is a spike above
+   it (surprise, rectified, flicker-gated). `AudioSense` runs this on its own
+   real-time loop inside Perception and drops each salient episode into the
+   heartbeat, which brackets clusters into memories. Tuned offline first against
+   one file (the `Mind.Hearing.Tuner` bench). **Proven live:** the Mind heard a
+   minute of a real video and formed a durable memory of it — a bundle of `sound`
+   perceptions, each carrying its salience — decision 7, real. See *The first
+   sense: audio*.
 4. Fact distillation — turning memories into facts (where learning lives).
 5. Onward from there, one piece at a time.
 
@@ -197,6 +203,11 @@ genuine departure from it.
   then the quiet-room place-baseline test (decision 7's purest form).
 - **Stable sound-units / naming** — moving audio salience from *that something
   happened* to *what recurring thing it was* (form → meaning).
+- **Finer memory bracketing on continuous input** — today a memory closes only on
+  ~5s of no salient sound, so an unbroken 40-minute show forms one 40-minute
+  memory. A real episode wants a structural boundary (a scene or segment change),
+  not just a silence — a later refinement to *how* the heartbeat brackets, once
+  we've watched real long-form input pile up.
 - **Correction & trust** mechanics beyond the basics.
 - **Reshaping how it responds** from what it has learned (continual learning).
 - **EF migrations for Memory** — replace `EnsureCreated` with proper migrations
