@@ -8,6 +8,7 @@ using Mind.Hearing;
 //
 //   Mind.Hearing.Tuner <media-file> [seconds] [sampleRate]
 //        [--leak=0.05] [--restingLeak=0.005] [--ratio=2.5] [--floor=0.05] [--hold=0.4] [--minEpisode=0.08]
+//        [--vigilance=0.9] [--units=64]
 
 var positionals = args.Where(a => !a.StartsWith("--", StringComparison.Ordinal)).ToArray();
 if (positionals.Length == 0)
@@ -212,6 +213,74 @@ if (episodes.Count > 0)
             $"  [{episode.Start.TotalSeconds,6:0.0}s -> {episode.End.TotalSeconds,6:0.0}s] " +
             $"peak {episode.PeakSalience:0.000}  mean {episode.MeanSalience:0.000}  " +
             $"{episode.Duration.TotalSeconds:0.0}s ({episode.Frames} frames)");
+    }
+}
+
+// --- Sound-units: recognizing the same sound again. Fingerprint each episode three ways and
+//     cluster into recurring units with a bounded, strict codebook. Compare how each method groups
+//     the *same* episodes: which recognizes recurrences (fewer units, more reuse) without smearing
+//     distinct sounds together. Eyeball the timestamps against the video to judge coherence. ---
+if (episodes.Count > 0)
+{
+    var vigilance = FlagOr("vigilance", 0.9);
+    var unitCapacity = (int)FlagOr("units", 64);
+
+    // Each episode's mel frames, sliced from the full stream by its time span.
+    List<float[]> FramesFor(SalientEpisode episode)
+    {
+        var start = (int)Math.Round(episode.Start.TotalSeconds / stream.SecondsPerFrame);
+        var end = (int)Math.Round(episode.End.TotalSeconds / stream.SecondsPerFrame);
+        start = Math.Clamp(start, 0, frames.Count - 1);
+        end = Math.Clamp(end, start, frames.Count - 1);
+        return frames.GetRange(start, end - start + 1);
+    }
+
+    var fingerprints = new IFingerprint[]
+    {
+        new MelAverageFingerprint(),
+        new MfccFingerprint(cochlea.Bands, coefficients: 13),
+        new MfccTrajectoryFingerprint(cochlea.Bands, coefficients: 13, segments: 3),
+    };
+
+    Console.WriteLine();
+    Console.WriteLine(
+        $"sound-units: vigilance {vigilance} (higher = stricter), capacity {unitCapacity}, " +
+        $"{episodes.Count} episodes");
+
+    var episodeFrames = episodes.Select(FramesFor).ToList();
+
+    foreach (var fingerprint in fingerprints)
+    {
+        var codebook = new SoundUnitCodebook(vigilance, unitCapacity);
+        var assignments = new int[episodes.Count];
+        for (var i = 0; i < episodes.Count; i++)
+        {
+            assignments[i] = codebook.Assign(fingerprint.Compute(episodeFrames[i]));
+        }
+
+        var reused = codebook.Counts.Count(c => c > 1);
+        Console.WriteLine();
+        Console.WriteLine(
+            $"  [{fingerprint.Name}] {codebook.UnitCount} units from {episodes.Count} episodes, " +
+            $"{reused} recurred (>1):");
+
+        // Show the recurring units and the timestamps that landed on them — the interesting ones.
+        for (var unit = 0; unit < codebook.UnitCount; unit++)
+        {
+            if (codebook.Counts[unit] < 2)
+            {
+                continue;
+            }
+            var times = new List<string>();
+            for (var i = 0; i < assignments.Length; i++)
+            {
+                if (assignments[i] == unit)
+                {
+                    times.Add($"{episodes[i].Start.TotalSeconds:0.0}s");
+                }
+            }
+            Console.WriteLine($"    unit #{unit} x{codebook.Counts[unit]}: {string.Join(", ", times)}");
+        }
     }
 }
 
