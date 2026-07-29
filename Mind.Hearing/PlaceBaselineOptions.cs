@@ -39,4 +39,11 @@ public sealed class PlaceBaselineOptions
 
     /// <summary>How long surprise must stay below threshold before an open episode is closed, in seconds.</summary>
     public double HoldSeconds { get; set; } = 0.4;
+
+    /// <summary>
+    /// Shortest episode worth reporting, in seconds (the span from first to last salient frame).
+    /// Momentary single-frame twitches shorter than this are dropped, so a salient episode is a
+    /// real event and not a flicker. Set to 0 to report everything.
+    /// </summary>
+    public double MinEpisodeSeconds { get; set; } = 0.08;
 }

@@ -150,7 +150,9 @@ public sealed class PlaceBaseline
     /// <summary>Close any episode still open at end-of-stream, so nothing salient is lost.</summary>
     public SalientEpisode? Flush() => _open ? CloseEpisode() : null;
 
-    private SalientEpisode CloseEpisode()
+    // Build the episode and reset the open state. Returns null for an episode shorter than the
+    // minimum — a momentary flicker, not a real event — so the caller emits nothing.
+    private SalientEpisode? CloseEpisode()
     {
         var episode = new SalientEpisode(
             Start: TimeSpan.FromSeconds(_openFrame * _secondsPerFrame),
@@ -160,6 +162,6 @@ public sealed class PlaceBaseline
             Frames: _aboveFrames);
 
         _open = false;
-        return episode;
+        return episode.Duration.TotalSeconds >= _options.MinEpisodeSeconds ? episode : null;
     }
 }

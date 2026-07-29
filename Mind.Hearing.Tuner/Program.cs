@@ -7,7 +7,7 @@ using Mind.Hearing;
 // material before it is wired into the always-on service.
 //
 //   Mind.Hearing.Tuner <media-file> [seconds] [sampleRate]
-//        [--leak=0.05] [--restingLeak=0.005] [--ratio=2.5] [--floor=0.05] [--hold=0.4]
+//        [--leak=0.05] [--restingLeak=0.005] [--ratio=2.5] [--floor=0.05] [--hold=0.4] [--minEpisode=0.08]
 
 var positionals = args.Where(a => !a.StartsWith("--", StringComparison.Ordinal)).ToArray();
 if (positionals.Length == 0)
@@ -95,6 +95,7 @@ var options = new PlaceBaselineOptions
     SpikeRatio = FlagOr("ratio", new PlaceBaselineOptions().SpikeRatio),
     Floor = FlagOr("floor", new PlaceBaselineOptions().Floor),
     HoldSeconds = FlagOr("hold", new PlaceBaselineOptions().HoldSeconds),
+    MinEpisodeSeconds = FlagOr("minEpisode", new PlaceBaselineOptions().MinEpisodeSeconds),
 };
 
 var detector = new PlaceBaseline(options, stream.SecondsPerFrame);
@@ -125,7 +126,8 @@ if (surprises.Length == 0) minSurprise = 0;
 Console.WriteLine();
 Console.WriteLine(
     $"place-baseline: leak {options.ExpectationLeak}, restingLeak {options.RestingLeak}, " +
-    $"spike x{options.SpikeRatio}, floor {options.Floor}, hold {options.HoldSeconds}s");
+    $"spike x{options.SpikeRatio}, floor {options.Floor}, hold {options.HoldSeconds}s, " +
+    $"minEpisode {options.MinEpisodeSeconds}s");
 Console.WriteLine(
     $"  surprise: min {minSurprise:0.000}  mean {(surprises.Length > 0 ? sumSurprise / surprises.Length : 0):0.000}  " +
     $"max {maxSurprise:0.000}   -> {episodes.Count} salient episode(s)");
