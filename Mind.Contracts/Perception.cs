@@ -8,8 +8,9 @@ namespace Mind.Contracts;
 /// <param name="What">What was perceived, described as text.</param>
 /// <param name="At">When it was perceived.</param>
 /// <param name="Intensity">
-/// How strongly it registered (0..1). Reserved for baseline/salience work;
-/// the simple detector today does not use it yet.
+/// How strongly it registered — the salience magnitude, i.e. the peak departure from the
+/// place-baseline. Small for a faint departure, larger for a strong one; not capped at 1.
+/// (A manual poke sets its own value; a real sense fills this from measured salience.)
 /// </param>
 /// <param name="Source">Where the perception came from (a caller, a sensor).</param>
 public sealed record Perception(

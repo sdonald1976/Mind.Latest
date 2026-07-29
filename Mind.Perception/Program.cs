@@ -1,6 +1,7 @@
 using MassTransit;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.Extensions.Options;
+using Mind.Hearing;
 using Mind.Perception;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -12,6 +13,20 @@ builder.Services
     .Bind(builder.Configuration.GetSection(HeartbeatOptions.SectionName))
     .ValidateDataAnnotations()
     .ValidateOnStart();
+
+// Hearing: the source (this project) plus the cochlea and place-baseline (the Mind.Hearing
+// library). Each bound from its own section so every knob is tunable without a recompile.
+builder.Services
+    .AddOptions<HearingOptions>()
+    .Bind(builder.Configuration.GetSection(HearingOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services
+    .AddOptions<CochleaOptions>()
+    .Bind(builder.Configuration.GetSection(CochleaOptions.SectionName));
+builder.Services
+    .AddOptions<PlaceBaselineOptions>()
+    .Bind(builder.Configuration.GetSection(PlaceBaselineOptions.SectionName));
 
 // Messaging: publish formed memories onto the bus. The broker holds and
 // redelivers each one until Memory stores and acknowledges it. Registered
@@ -33,6 +48,10 @@ builder.Services.AddSingleton<IMemoryPublisher, BusMemoryPublisher>();
 
 builder.Services.AddSingleton<PerceptionStream>();
 builder.Services.AddHostedService<Heartbeat>();
+
+// The Mind's first real sense. It feeds salient episodes into the same PerceptionStream the
+// heartbeat drains, so hearing and the manual /perceive poke arrive the same way.
+builder.Services.AddHostedService<AudioSense>();
 
 // A clickable API page (Swagger UI) so the service can be driven from a browser.
 builder.Services.AddEndpointsApiExplorer();
