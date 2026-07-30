@@ -9,6 +9,7 @@ using Mind.Hearing;
 //   Mind.Hearing.Tuner <media-file> [seconds] [sampleRate]
 //        [--leak=0.05] [--restingLeak=0.005] [--ratio=2.5] [--floor=0.05] [--hold=0.4] [--minEpisode=0.08]
 //        [--vigilance=0.9] [--units=64] [--exemplars=<dir>]  (dir: write listenable clips + index.html)
+//        [--words] [--wordFloor=0.15] [--wordMinGap=120] [--wordMaxLen=400]  (cluster word/syllable pieces, ms)
 
 var positionals = args.Where(a => !a.StartsWith("--", StringComparison.Ordinal)).ToArray();
 if (positionals.Length == 0)
@@ -216,52 +217,80 @@ if (episodes.Count > 0)
     }
 }
 
-// --- Sound-units: recognizing the same sound again. Fingerprint each episode three ways and
-//     cluster into recurring units with a bounded, strict codebook. Compare how each method groups
-//     the *same* episodes: which recognizes recurrences (fewer units, more reuse) without smearing
-//     distinct sounds together. Eyeball the timestamps against the video to judge coherence. ---
+// --- Sound-units: recognizing the same sound again. Cluster segments into recurring units with a
+//     bounded, strict codebook, and (optionally) dump listenable exemplars. Two grains:
+//       default  -> one segment per salient EPISODE (phrase-sized; tends to group by speaker/source)
+//       --words  -> cut phrases at onset peaks into WORD/syllable-sized segments and cluster those
+//                   (the road toward telling the actual words apart).
+//     Ear the exemplars to judge whether a unit's members really are the same sound. ---
 if (episodes.Count > 0)
 {
     var vigilance = FlagOr("vigilance", 0.9);
     var unitCapacity = (int)FlagOr("units", 64);
     var exemplarsDir = Flag("exemplars"); // when set, dump listenable clips + an index.html
+    var wordMode = args.Any(a => a == "--words" || a.StartsWith("--words=", StringComparison.Ordinal));
 
-    // Each episode's mel frames, sliced from the full stream by its time span.
-    List<float[]> FramesFor(SalientEpisode episode)
+    // The segments to cluster, as (frame range, start time): whole salient episodes, or the
+    // word/syllable pieces onset-segmentation cuts out of the surprise signal.
+    var segments = new List<(int Start, int End, double Time)>();
+    if (wordMode)
     {
-        var start = (int)Math.Round(episode.Start.TotalSeconds / stream.SecondsPerFrame);
-        var end = (int)Math.Round(episode.End.TotalSeconds / stream.SecondsPerFrame);
-        start = Math.Clamp(start, 0, frames.Count - 1);
-        end = Math.Clamp(end, start, frames.Count - 1);
-        return frames.GetRange(start, end - start + 1);
+        var onsetFloor = FlagOr("wordFloor", 0.15);
+        var minGap = (int)Math.Round(FlagOr("wordMinGap", 120) / 1000.0 / stream.SecondsPerFrame);
+        var maxLen = (int)Math.Round(FlagOr("wordMaxLen", 400) / 1000.0 / stream.SecondsPerFrame);
+        foreach (var segment in new OnsetSegmenter(onsetFloor, minGap, maxLen).Segment(surprises))
+        {
+            segments.Add((segment.StartFrame, segment.EndFrame, segment.StartFrame * stream.SecondsPerFrame));
+        }
+    }
+    else
+    {
+        foreach (var episode in episodes)
+        {
+            var start = Math.Clamp((int)Math.Round(episode.Start.TotalSeconds / stream.SecondsPerFrame), 0, frames.Count - 1);
+            var end = Math.Clamp((int)Math.Round(episode.End.TotalSeconds / stream.SecondsPerFrame), start, frames.Count - 1);
+            segments.Add((start, end, episode.Start.TotalSeconds));
+        }
     }
 
-    // A short WAV around an episode (with a little padding), pulled from the raw samples, so a
-    // unit's members can be auditioned back-to-back.
-    float[] ClipFor(SalientEpisode episode)
+    // A segment's mel frames, and a short padded WAV around it (for the exemplar page).
+    List<float[]> FramesFor((int Start, int End, double Time) segment)
     {
-        const double pad = 0.15;
+        var start = Math.Clamp(segment.Start, 0, frames.Count - 1);
+        var end = Math.Clamp(segment.End, start + 1, frames.Count);
+        return frames.GetRange(start, end - start);
+    }
+
+    float[] ClipFor((int Start, int End, double Time) segment)
+    {
+        const double pad = 0.1;
         var all = source.Samples;
-        var lo = (int)((episode.Start.TotalSeconds - pad) * rate);
-        var hi = (int)((episode.End.TotalSeconds + pad) * rate);
-        lo = Math.Clamp(lo, 0, all.Length);
-        hi = Math.Clamp(hi, lo, all.Length);
+        var lo = Math.Clamp((int)((segment.Time - pad) * rate), 0, all.Length);
+        var hi = Math.Clamp((int)((segment.End * stream.SecondsPerFrame + pad) * rate), lo, all.Length);
         return all.Slice(lo, hi - lo).ToArray();
     }
 
-    var fingerprints = new IFingerprint[]
-    {
-        new MelAverageFingerprint(),
-        new MfccFingerprint(cochlea.Bands, coefficients: 13),
-        new MfccTrajectoryFingerprint(cochlea.Bands, coefficients: 13, segments: 3),
-    };
+    // mel-avg only ever groups by texture, so word mode uses the pitch-robust methods only.
+    var fingerprints = wordMode
+        ? new IFingerprint[]
+        {
+            new MfccFingerprint(cochlea.Bands, coefficients: 13),
+            new MfccTrajectoryFingerprint(cochlea.Bands, coefficients: 13, segments: 3),
+        }
+        : new IFingerprint[]
+        {
+            new MelAverageFingerprint(),
+            new MfccFingerprint(cochlea.Bands, coefficients: 13),
+            new MfccTrajectoryFingerprint(cochlea.Bands, coefficients: 13, segments: 3),
+        };
 
+    var grain = wordMode ? "word-segments" : "salient-episodes";
     Console.WriteLine();
     Console.WriteLine(
-        $"sound-units: vigilance {vigilance} (higher = stricter), capacity {unitCapacity}, " +
-        $"{episodes.Count} episodes");
+        $"sound-units [{grain}]: vigilance {vigilance} (higher = stricter), capacity {unitCapacity}, " +
+        $"{segments.Count} segments");
 
-    var episodeFrames = episodes.Select(FramesFor).ToList();
+    var segmentFrames = segments.Select(FramesFor).ToList();
 
     var html = new System.Text.StringBuilder();
     if (exemplarsDir is not null)
@@ -271,8 +300,8 @@ if (episodes.Count > 0)
             "<style>body{font-family:sans-serif;margin:2rem;max-width:60rem}" +
             "h2{margin-top:2rem;border-top:1px solid #ccc;padding-top:1rem}h3{color:#333}" +
             ".m{margin:.25rem 0}.t{display:inline-block;width:5rem;color:#666}audio{vertical-align:middle}</style>");
-        html.Append($"<h1>{Path.GetFileName(path)} &mdash; recurring sound-units</h1>");
-        html.Append("<p>Each unit groups episodes the codebook judged &ldquo;the same sound.&rdquo; " +
+        html.Append($"<h1>{Path.GetFileName(path)} &mdash; recurring sound-units ({grain})</h1>");
+        html.Append("<p>Each unit groups segments the codebook judged &ldquo;the same sound.&rdquo; " +
                     "Listen down a unit &mdash; do they actually sound alike?</p>");
     }
 
@@ -281,16 +310,16 @@ if (episodes.Count > 0)
     foreach (var fingerprint in fingerprints)
     {
         var codebook = new SoundUnitCodebook(vigilance, unitCapacity);
-        var assignments = new int[episodes.Count];
-        for (var i = 0; i < episodes.Count; i++)
+        var assignments = new int[segments.Count];
+        for (var i = 0; i < segments.Count; i++)
         {
-            assignments[i] = codebook.Assign(fingerprint.Compute(episodeFrames[i]));
+            assignments[i] = codebook.Assign(fingerprint.Compute(segmentFrames[i]));
         }
 
         var reused = codebook.Counts.Count(c => c > 1);
         Console.WriteLine();
         Console.WriteLine(
-            $"  [{fingerprint.Name}] {codebook.UnitCount} units from {episodes.Count} episodes, " +
+            $"  [{fingerprint.Name}] {codebook.UnitCount} units from {segments.Count} segments, " +
             $"{reused} recurred (>1):");
 
         if (exemplarsDir is not null)
@@ -298,7 +327,6 @@ if (episodes.Count > 0)
             html.Append($"<h2>{fingerprint.Name} &mdash; {codebook.UnitCount} units, {reused} recurred</h2>");
         }
 
-        // Show the recurring units and the timestamps that landed on them — the interesting ones.
         for (var unit = 0; unit < codebook.UnitCount; unit++)
         {
             if (codebook.Counts[unit] < 2)
@@ -315,9 +343,10 @@ if (episodes.Count > 0)
                 }
             }
 
-            Console.WriteLine(
-                $"    unit #{unit} x{codebook.Counts[unit]}: " +
-                string.Join(", ", members.Select(i => $"{episodes[i].Start.TotalSeconds:0.0}s")));
+            // Console: cap the printed timestamps so a busy word run stays readable.
+            var shown = members.Take(12).Select(i => $"{segments[i].Time:0.0}s");
+            var more = members.Count > 12 ? $", +{members.Count - 12}" : "";
+            Console.WriteLine($"    unit #{unit} x{codebook.Counts[unit]}: {string.Join(", ", shown)}{more}");
 
             if (exemplarsDir is not null)
             {
@@ -331,9 +360,9 @@ if (episodes.Count > 0)
                         break;
                     }
 
-                    var label = $"{episodes[i].Start.TotalSeconds:0.0}s";
-                    var file = Path.Combine(exemplarsDir, fingerprint.Name, $"unit-{unit}", $"{label}.wav");
-                    WavWriter.WriteMono(file, ClipFor(episodes[i]), rate);
+                    var label = $"{segments[i].Time:0.0}s";
+                    var file = Path.Combine(exemplarsDir, fingerprint.Name, $"unit-{unit}", $"{written:00}_{label}.wav");
+                    WavWriter.WriteMono(file, ClipFor(segments[i]), rate);
                     var relative = Path.GetRelativePath(exemplarsDir, file).Replace('\\', '/');
                     html.Append(
                         $"<div class=\"m\"><span class=\"t\">{label}</span>" +
