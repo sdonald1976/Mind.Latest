@@ -159,6 +159,55 @@ texture and spikes on real onsets and transitions. A live mic in a quiet room
 later proves the *concept* in its purest form: the steady hum of a place, and a
 genuine departure from it.
 
+## Toward words: sound-units (in progress)
+
+Salience tells the Mind *that* something happened; identity tells it *what
+recurred*. A **sound-unit** is a recurring, recognizable category of sound the
+Mind discovers on its own — a fingerprint with a stable id, reused every time a
+similar sound returns — so a memory reads `#1, #2, #1` instead of anonymous
+`sound, sound, sound`. Units are the prerequisite for facts (you can't distil a
+fact from contentless salience), so they come *before* fact distillation.
+
+Being worked out on the `Mind.Hearing.Tuner` bench (not yet graduated):
+
+- **Fingerprint.** MFCCs are the front-runner: cepstral, so *pitch is stripped* and
+  the same sound at different pitches groups. (Raw mel over-merges by texture; a
+  short MFCC *trajectory* keeps time.) Lean **strict** on vigilance. A bounded
+  codebook keeps the unit count from exploding.
+- **Segmentation.** A whole salient phrase fingerprints as the *speaker's voice*, not
+  a word. To reach words, cut finer — at the **pauses between words** (voiced runs
+  bracketed by quiet), not at every onset.
+- **Honest walls.** Background music fills the pauses and defeats the segmentation;
+  nothing here truly separates speech from music. And even a clean word-unit is only
+  "recurring sound-pattern," never *meaning* — meaning needs grounding (a second
+  sense), deliberately later, possibly elsewhere.
+
+## Richer hearing: the auditory-nerve bundle (spec'd, not built)
+
+The cochlea hands up only *timbre* (mel). The waveform carries far more, all cheap
+and learning-nothing — so widen the per-frame vector into a fuller bundle:
+
+- **Mel** (20) — timbre / *what kind* of sound. *(have it)*
+- **Loudness** (1) — log-RMS.
+- **Pitch (F0)** (1) — the note / melody / voice pitch (autocorrelation finds the
+  harmonic-comb spacing).
+- **Harmonicity** (1) — tonal vs. noisy (voice/note vs. hiss/clatter); falls out of
+  the *same* autocorrelation (the peak's height).
+- **Brightness** (1) — spectral centroid (dark vs. sharp).
+
+Design points, decided up front:
+
+- **Normalize** each channel to a comparable range (pitch in *log*-Hz), or F0's big
+  numbers dominate every distance — part of the spec, not an afterthought.
+- **A menu, not one blob.** Each consumer picks channels: word-units *exclude* pitch
+  (the MFCC point); the place-baseline wants *all* of them; "is this a voice?" wants
+  harmonicity + F0. Compute once, select per task.
+- **What it buys.** The place-baseline goes multi-dimensional — a new voice, a melody
+  change, a shift from noise to tone all become salient, not just new timbre. And
+  voice-vs-music-vs-clatter becomes readable.
+- **Caveats.** Pitch makes octave errors (YIN helps); each channel adds a scale knob;
+  the 8kHz ceiling still caps brightness/sibilance.
+
 ## Build order
 
 1. **The heartbeat** *(built — `Mind.Perception`)* — always-on, runs in time
@@ -188,8 +237,14 @@ genuine departure from it.
    minute of a real video and formed a durable memory of it — a bundle of `sound`
    perceptions, each carrying its salience — decision 7, real. See *The first
    sense: audio*.
-4. Fact distillation — turning memories into facts (where learning lives).
-5. Onward from there, one piece at a time.
+4. **Sound-units — perceptions gain identity** *(in progress — bench)* — recognize
+   the same sound recurring (MFCC fingerprint + bounded strict codebook), cutting at
+   word pauses to reach word grain. The prerequisite for facts. See *Toward words*.
+5. **Richer hearing — the auditory-nerve bundle** *(spec'd)* — widen the front-end
+   beyond mel to pitch, harmonicity, and brightness, so salience and discrimination
+   see melody, voice-vs-noise, and tone, not just timbre. See *Richer hearing*.
+6. Fact distillation — turning memories into facts (where learning lives).
+7. Onward from there, one piece at a time.
 
 ## The "later" shelf (deferred, not forgotten)
 
