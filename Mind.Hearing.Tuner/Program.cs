@@ -263,10 +263,22 @@ if (episodes.Count > 0)
 
     float[] ClipFor((int Start, int End, double Time) segment)
     {
-        const double pad = 0.1;
+        const double pad = 0.15;
+        const double minSeconds = 0.6; // word pieces are tiny; give each enough length to actually hear
         var all = source.Samples;
-        var lo = Math.Clamp((int)((segment.Time - pad) * rate), 0, all.Length);
-        var hi = Math.Clamp((int)((segment.End * stream.SecondsPerFrame + pad) * rate), lo, all.Length);
+        var lo = (int)((segment.Time - pad) * rate);
+        var hi = (int)((segment.End * stream.SecondsPerFrame + pad) * rate);
+
+        var minSamples = (int)(minSeconds * rate);
+        if (hi - lo < minSamples)
+        {
+            var grow = (minSamples - (hi - lo)) / 2;
+            lo -= grow;
+            hi += grow;
+        }
+
+        lo = Math.Clamp(lo, 0, all.Length);
+        hi = Math.Clamp(hi, lo, all.Length);
         return all.Slice(lo, hi - lo).ToArray();
     }
 
