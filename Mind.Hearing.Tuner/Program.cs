@@ -8,7 +8,7 @@ using Mind.Hearing;
 //
 //   Mind.Hearing.Tuner <media-file> [seconds] [sampleRate]
 //        [--leak=0.05] [--restingLeak=0.005] [--ratio=2.5] [--floor=0.05] [--hold=0.4] [--minEpisode=0.08]
-//        [--vigilance=0.9] [--units=64]
+//        [--vigilance=0.9] [--units=64] [--exemplars=<dir>]  (dir: write listenable clips + index.html)
 
 var positionals = args.Where(a => !a.StartsWith("--", StringComparison.Ordinal)).ToArray();
 if (positionals.Length == 0)
@@ -224,6 +224,7 @@ if (episodes.Count > 0)
 {
     var vigilance = FlagOr("vigilance", 0.9);
     var unitCapacity = (int)FlagOr("units", 64);
+    var exemplarsDir = Flag("exemplars"); // when set, dump listenable clips + an index.html
 
     // Each episode's mel frames, sliced from the full stream by its time span.
     List<float[]> FramesFor(SalientEpisode episode)
@@ -233,6 +234,19 @@ if (episodes.Count > 0)
         start = Math.Clamp(start, 0, frames.Count - 1);
         end = Math.Clamp(end, start, frames.Count - 1);
         return frames.GetRange(start, end - start + 1);
+    }
+
+    // A short WAV around an episode (with a little padding), pulled from the raw samples, so a
+    // unit's members can be auditioned back-to-back.
+    float[] ClipFor(SalientEpisode episode)
+    {
+        const double pad = 0.15;
+        var all = source.Samples;
+        var lo = (int)((episode.Start.TotalSeconds - pad) * rate);
+        var hi = (int)((episode.End.TotalSeconds + pad) * rate);
+        lo = Math.Clamp(lo, 0, all.Length);
+        hi = Math.Clamp(hi, lo, all.Length);
+        return all.Slice(lo, hi - lo).ToArray();
     }
 
     var fingerprints = new IFingerprint[]
@@ -249,6 +263,21 @@ if (episodes.Count > 0)
 
     var episodeFrames = episodes.Select(FramesFor).ToList();
 
+    var html = new System.Text.StringBuilder();
+    if (exemplarsDir is not null)
+    {
+        html.Append("<!doctype html><meta charset=\"utf-8\"><title>sound-unit exemplars</title>");
+        html.Append(
+            "<style>body{font-family:sans-serif;margin:2rem;max-width:60rem}" +
+            "h2{margin-top:2rem;border-top:1px solid #ccc;padding-top:1rem}h3{color:#333}" +
+            ".m{margin:.25rem 0}.t{display:inline-block;width:5rem;color:#666}audio{vertical-align:middle}</style>");
+        html.Append($"<h1>{Path.GetFileName(path)} &mdash; recurring sound-units</h1>");
+        html.Append("<p>Each unit groups episodes the codebook judged &ldquo;the same sound.&rdquo; " +
+                    "Listen down a unit &mdash; do they actually sound alike?</p>");
+    }
+
+    const int maxClipsPerUnit = 8;
+
     foreach (var fingerprint in fingerprints)
     {
         var codebook = new SoundUnitCodebook(vigilance, unitCapacity);
@@ -264,6 +293,11 @@ if (episodes.Count > 0)
             $"  [{fingerprint.Name}] {codebook.UnitCount} units from {episodes.Count} episodes, " +
             $"{reused} recurred (>1):");
 
+        if (exemplarsDir is not null)
+        {
+            html.Append($"<h2>{fingerprint.Name} &mdash; {codebook.UnitCount} units, {reused} recurred</h2>");
+        }
+
         // Show the recurring units and the timestamps that landed on them — the interesting ones.
         for (var unit = 0; unit < codebook.UnitCount; unit++)
         {
@@ -271,16 +305,52 @@ if (episodes.Count > 0)
             {
                 continue;
             }
-            var times = new List<string>();
+
+            var members = new List<int>();
             for (var i = 0; i < assignments.Length; i++)
             {
                 if (assignments[i] == unit)
                 {
-                    times.Add($"{episodes[i].Start.TotalSeconds:0.0}s");
+                    members.Add(i);
                 }
             }
-            Console.WriteLine($"    unit #{unit} x{codebook.Counts[unit]}: {string.Join(", ", times)}");
+
+            Console.WriteLine(
+                $"    unit #{unit} x{codebook.Counts[unit]}: " +
+                string.Join(", ", members.Select(i => $"{episodes[i].Start.TotalSeconds:0.0}s")));
+
+            if (exemplarsDir is not null)
+            {
+                html.Append($"<h3>unit #{unit} &times;{codebook.Counts[unit]}</h3>");
+                var written = 0;
+                foreach (var i in members)
+                {
+                    if (written >= maxClipsPerUnit)
+                    {
+                        html.Append($"<div class=\"m\"><em>&hellip; {members.Count - maxClipsPerUnit} more</em></div>");
+                        break;
+                    }
+
+                    var label = $"{episodes[i].Start.TotalSeconds:0.0}s";
+                    var file = Path.Combine(exemplarsDir, fingerprint.Name, $"unit-{unit}", $"{label}.wav");
+                    WavWriter.WriteMono(file, ClipFor(episodes[i]), rate);
+                    var relative = Path.GetRelativePath(exemplarsDir, file).Replace('\\', '/');
+                    html.Append(
+                        $"<div class=\"m\"><span class=\"t\">{label}</span>" +
+                        $"<audio controls preload=\"none\" src=\"{relative}\"></audio></div>");
+                    written++;
+                }
+            }
         }
+    }
+
+    if (exemplarsDir is not null)
+    {
+        Directory.CreateDirectory(exemplarsDir);
+        var indexPath = Path.Combine(exemplarsDir, "index.html");
+        File.WriteAllText(indexPath, html.ToString());
+        Console.WriteLine();
+        Console.WriteLine($"exemplars written -> open {indexPath}");
     }
 }
 
