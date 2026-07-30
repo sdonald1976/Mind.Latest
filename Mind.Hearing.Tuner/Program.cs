@@ -9,7 +9,9 @@ using Mind.Hearing;
 //   Mind.Hearing.Tuner <media-file> [seconds] [sampleRate]
 //        [--leak=0.05] [--restingLeak=0.005] [--ratio=2.5] [--floor=0.05] [--hold=0.4] [--minEpisode=0.08]
 //        [--vigilance=0.9] [--units=64] [--exemplars=<dir>]  (dir: write listenable clips + index.html)
-//        [--words] [--wordFloor=0.15] [--wordMinGap=120] [--wordMaxLen=400]  (cluster word/syllable pieces, ms)
+//        [--words | --words=onset]  cut words at pauses (default) or at onset peaks
+//        [--voiceFloor=0.02] [--gap=80] [--minWord=100] [--maxWord=800]  (pause mode, ms)
+//        [--wordFloor=0.15] [--wordMinGap=120] [--wordMaxLen=400]  (onset mode, ms)
 
 var positionals = args.Where(a => !a.StartsWith("--", StringComparison.Ordinal)).ToArray();
 if (positionals.Length == 0)
@@ -228,17 +230,50 @@ if (episodes.Count > 0)
     var vigilance = FlagOr("vigilance", 0.9);
     var unitCapacity = (int)FlagOr("units", 64);
     var exemplarsDir = Flag("exemplars"); // when set, dump listenable clips + an index.html
-    var wordMode = args.Any(a => a == "--words" || a.StartsWith("--words=", StringComparison.Ordinal));
+    var wordFlag = args.FirstOrDefault(a => a == "--words" || a.StartsWith("--words=", StringComparison.Ordinal));
+    var wordMode = wordFlag is not null;
+    var useOnset = wordFlag is not null && wordFlag.Contains("onset", StringComparison.Ordinal);
 
-    // The segments to cluster, as (frame range, start time): whole salient episodes, or the
-    // word/syllable pieces onset-segmentation cuts out of the surprise signal.
+    int Frames(double milliseconds) => Math.Max(1, (int)Math.Round(milliseconds / 1000.0 / stream.SecondsPerFrame));
+
+    // The segments to cluster, as (frame range, start time): whole salient episodes, or word-sized
+    // pieces. Two ways to cut words: at pauses (default — the quiet gaps between spoken words, which
+    // also leaves continuous music as one run-on rather than fake words), or at onset peaks
+    // (--words=onset — every syllable onset, which also fires on beats and noise).
     var segments = new List<(int Start, int End, double Time)>();
-    if (wordMode)
+    if (wordMode && useOnset)
     {
         var onsetFloor = FlagOr("wordFloor", 0.15);
-        var minGap = (int)Math.Round(FlagOr("wordMinGap", 120) / 1000.0 / stream.SecondsPerFrame);
-        var maxLen = (int)Math.Round(FlagOr("wordMaxLen", 400) / 1000.0 / stream.SecondsPerFrame);
-        foreach (var segment in new OnsetSegmenter(onsetFloor, minGap, maxLen).Segment(surprises))
+        var onsets = new OnsetSegmenter(onsetFloor, Frames(FlagOr("wordMinGap", 120)), Frames(FlagOr("wordMaxLen", 400)));
+        foreach (var segment in onsets.Segment(surprises))
+        {
+            segments.Add((segment.StartFrame, segment.EndFrame, segment.StartFrame * stream.SecondsPerFrame));
+        }
+    }
+    else if (wordMode)
+    {
+        // Per-frame loudness (RMS over each hop) — the signal the pauses show up in.
+        var hop = cochlea.HopSize;
+        var window = cochlea.FftSize;
+        var pcm = source.Samples;
+        var energy = new double[frames.Count];
+        for (var i = 0; i < frames.Count; i++)
+        {
+            var from = i * hop;
+            double sum = 0;
+            var n = 0;
+            for (var j = from; j < from + window && j < pcm.Length; j++)
+            {
+                sum += (double)pcm[j] * pcm[j];
+                n++;
+            }
+            energy[i] = n > 0 ? Math.Sqrt(sum / n) : 0;
+        }
+
+        var voiceFloor = FlagOr("voiceFloor", 0.02);
+        var pauses = new PauseSegmenter(
+            voiceFloor, Frames(FlagOr("gap", 80)), Frames(FlagOr("minWord", 100)), Frames(FlagOr("maxWord", 800)));
+        foreach (var segment in pauses.Segment(energy))
         {
             segments.Add((segment.StartFrame, segment.EndFrame, segment.StartFrame * stream.SecondsPerFrame));
         }
@@ -296,7 +331,7 @@ if (episodes.Count > 0)
             new MfccTrajectoryFingerprint(cochlea.Bands, coefficients: 13, segments: 3),
         };
 
-    var grain = wordMode ? "word-segments" : "salient-episodes";
+    var grain = wordMode ? (useOnset ? "word-onsets" : "word-pauses") : "salient-episodes";
     Console.WriteLine();
     Console.WriteLine(
         $"sound-units [{grain}]: vigilance {vigilance} (higher = stricter), capacity {unitCapacity}, " +
