@@ -443,4 +443,58 @@ if (episodes.Count > 0)
     }
 }
 
+// --- The richer auditory bundle: loudness, pitch, harmonicity, brightness per frame. Verify each
+//     channel tracks something real (pitch moves with the voice; harmonicity high in speech, low in
+//     hiss/silence; brightness up on sibilants) before wiring them into salience. ---
+source.Reset();
+var ear = new Ear(new Cochlea(new CochleaOptions { SampleRate = rate }));
+var auditory = new AuditoryStream(source, ear);
+var auditoryFrames = new List<AuditoryFrame>();
+while (auditory.Next() is { } auditoryFrame)
+{
+    auditoryFrames.Add(auditoryFrame);
+}
+
+Console.WriteLine();
+Console.WriteLine(
+    $"auditory bundle: {auditoryFrames.Count:N0} frames, pitch range {ear.MinPitchHz:0}-{ear.MaxPitchHz:0} Hz");
+
+if (auditoryFrames.Count > 0)
+{
+    var voicedTotal = auditoryFrames.Count(f => f.Voiced);
+    Console.WriteLine($"  voiced: {voicedTotal:N0} frames ({100.0 * voicedTotal / auditoryFrames.Count:0}%)");
+    Console.WriteLine("  per second:  loud | pitch  | harm | bright");
+
+    var perRow = Math.Max(1, (int)Math.Round(1.0 / auditory.SecondsPerFrame));
+    var row = 0;
+    for (var i = 0; i < auditoryFrames.Count; i += perRow)
+    {
+        var end = Math.Min(i + perRow, auditoryFrames.Count);
+        double loud = 0, harm = 0, bright = 0, pitch = 0;
+        var voiced = 0;
+        for (var j = i; j < end; j++)
+        {
+            var f = auditoryFrames[j];
+            loud += f.Loudness;
+            harm += f.Harmonicity;
+            bright += f.BrightnessHz;
+            if (f.Voiced)
+            {
+                pitch += f.PitchHz;
+                voiced++;
+            }
+        }
+
+        var n = end - i;
+        var pitchText = voiced > 0 ? $"{pitch / voiced,4:0}Hz" : "  -- ";
+        Console.WriteLine($"  {row,5}s | {loud / n:0.000} | {pitchText} | {harm / n:0.00} | {bright / n,5:0}Hz");
+        row++;
+        if (row > 60)
+        {
+            Console.WriteLine("  ... (truncated)");
+            break;
+        }
+    }
+}
+
 return 0;

@@ -57,6 +57,13 @@ public sealed class Cochlea
     public int Bands { get; }
     public int SampleRate { get; }
 
+    /// <summary>
+    /// The power spectrum from the most recent <see cref="Analyze"/> call — for features (like
+    /// brightness) that read the same spectrum the mel bands were summed from, without a second FFT.
+    /// Valid until the next <see cref="Analyze"/>; not thread-safe, like the rest of the front-end.
+    /// </summary>
+    public ReadOnlySpan<float> LastPowerSpectrum => _power;
+
     /// <summary>Reduce one frame (exactly <see cref="FftSize"/> samples) to a mel vector.</summary>
     public float[] Analyze(ReadOnlySpan<float> frame)
     {
