@@ -182,7 +182,7 @@ Being worked out on the `Mind.Hearing.Tuner` bench (not yet graduated):
   "recurring sound-pattern," never *meaning* — meaning needs grounding (a second
   sense), deliberately later, possibly elsewhere.
 
-## Richer hearing: the auditory-nerve bundle (spec'd, not built)
+## Richer hearing: the auditory-nerve bundle (built)
 
 The cochlea hands up only *timbre* (mel). The waveform carries far more, all cheap
 and learning-nothing — so widen the per-frame vector into a fuller bundle:
@@ -237,12 +237,18 @@ Design points, decided up front:
    minute of a real video and formed a durable memory of it — a bundle of `sound`
    perceptions, each carrying its salience — decision 7, real. See *The first
    sense: audio*.
-4. **Sound-units — perceptions gain identity** *(in progress — bench)* — recognize
-   the same sound recurring (MFCC fingerprint + bounded strict codebook), cutting at
-   word pauses to reach word grain. The prerequisite for facts. See *Toward words*.
-5. **Richer hearing — the auditory-nerve bundle** *(spec'd)* — widen the front-end
-   beyond mel to pitch, harmonicity, and brightness, so salience and discrimination
-   see melody, voice-vs-noise, and tone, not just timbre. See *Richer hearing*.
+4. **Sound-units — perceptions gain identity** *(bench; walled at words)* — recognize
+   the same sound recurring (MFCC fingerprint + bounded strict codebook). Works at
+   *voice/source* grain (reliably re-recognizes a speaker/voice); **word identity is a
+   confirmed wall** — audio alone reaches word *shape*, not *which word* (that needs
+   grounding). Machinery kept for when grounding arrives. See *Toward words*.
+5. **Richer hearing — the auditory-nerve bundle** *(built — `Mind.Hearing`, `Ear`)* —
+   the front-end now emits an `AuditoryFrame` per hop: mel plus loudness, pitch,
+   harmonicity, and brightness (one autocorrelation gives pitch + harmonicity; the
+   cochlea's FFT gives brightness). Verified on real audio — pitch in the voice range,
+   harmonicity high in speech and low in silence, brightness up on sibilants. Still to
+   do: feed these into the place-baseline for *multi-dimensional* salience. See
+   *Richer hearing*.
 6. Fact distillation — turning memories into facts (where learning lives).
 7. Onward from there, one piece at a time.
 
