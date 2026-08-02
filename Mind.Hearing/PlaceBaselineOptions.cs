@@ -46,4 +46,21 @@ public sealed class PlaceBaselineOptions
     /// real event and not a flicker. Set to 0 to report everything.
     /// </summary>
     public double MinEpisodeSeconds { get; set; } = 0.08;
+
+    // How much each extra auditory channel adds to salience on top of timbre (mel). A change in
+    // pitch, loudness, harmonicity, or brightness — even at constant timbre — becomes a departure
+    // worth noticing; this is what makes the place-baseline multi-dimensional. 0 disables a channel
+    // (mel-only, the old behaviour). Tuned per input like everything else.
+
+    /// <summary>Weight of a loudness change in salience.</summary>
+    public double LoudnessWeight { get; set; } = 0.4;
+
+    /// <summary>Weight of a pitch (melody / voice) change in salience.</summary>
+    public double PitchWeight { get; set; } = 0.4;
+
+    /// <summary>Weight of a harmonicity change (voice↔noise) in salience.</summary>
+    public double HarmonicityWeight { get; set; } = 0.4;
+
+    /// <summary>Weight of a brightness change in salience.</summary>
+    public double BrightnessWeight { get; set; } = 0.4;
 }

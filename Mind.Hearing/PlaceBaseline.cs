@@ -1,32 +1,36 @@
 namespace Mind.Hearing;
 
 /// <summary>
-/// Holds the Mind's place-baseline over a mel stream and brackets the salient episodes that
-/// depart from it. Each frame the Mind predicts the sound (its running expectation), compares
-/// what arrives, and learns — nudging the expectation toward it. The surprise (new energy that
-/// appeared above the expectation) is the salience signal. Surprise above an adaptive threshold
-/// opens an episode; a return to quiet, held long enough, closes it.
+/// Holds the Mind's place-baseline over the auditory bundle and brackets the salient episodes that
+/// depart from it. Each frame the Mind predicts the sound (its running expectation across every
+/// channel — timbre, loudness, pitch, harmonicity, brightness), compares what arrives, and learns.
+/// The surprise is a departure in <em>any</em> channel: new energy above the expected timbre, plus a
+/// weighted change in loudness / pitch / harmonicity / brightness. Surprise above an adaptive
+/// threshold opens an episode; a return to quiet, held long enough, closes it.
 /// </summary>
 /// <remarks>
-/// Fed one mel frame at a time. <see cref="Observe"/> returns an episode at the moment one
-/// closes, otherwise null; call <see cref="Flush"/> at end-of-stream to close any still open.
-///
-/// Onset-shaped by design: surprise is rectified, so it fires on sound *appearing*, not
-/// vanishing — a sustained, unchanging sound settles back to idle and closes its episode
-/// (DESIGN.md decision 5: change makes memory, stillness does not). Salient cessation ("the
-/// fridge stops") is a deliberate later refinement.
+/// Fed one <see cref="AuditoryFrame"/> at a time. <see cref="Observe"/> returns an episode at the
+/// moment one closes, otherwise null; call <see cref="Flush"/> at end-of-stream to close any still
+/// open. Timbre surprise is rectified (fires on sound appearing, so a sustained sound settles back
+/// to idle — DESIGN.md decision 5); the extra channels use absolute departure, since a change in
+/// pitch or brightness in either direction is a real event. Setting a channel's weight to 0 falls
+/// back to the timbre-only behaviour.
 /// </remarks>
 public sealed class PlaceBaseline
 {
     private readonly PlaceBaselineOptions _options;
     private readonly double _secondsPerFrame;
     private readonly long _holdFrames;
+    private readonly double _minPitchHz;
+    private readonly double _maxPitchHz;
+    private readonly double _nyquistHz;
 
-    private float[]? _expectation;    // the predicted sound — the expected hum of the place
-    private double _restingSurprise;  // slow level of surprise — the adaptive threshold's anchor
+    private float[]? _melExpectation;   // the expected timbre — the hum of the place
+    private float[] _scalarExpectation = []; // expected loudness, pitch, harmonicity, brightness
+    private double _restingSurprise;    // slow level of surprise — the adaptive threshold's anchor
     private bool _restingPrimed;
 
-    private long _frame;              // global frame index
+    private long _frame;                // global frame index
 
     // Open-episode state.
     private bool _open;
@@ -36,7 +40,12 @@ public sealed class PlaceBaseline
     private double _sum;
     private int _aboveFrames;
 
-    public PlaceBaseline(PlaceBaselineOptions options, double secondsPerFrame)
+    public PlaceBaseline(
+        PlaceBaselineOptions options,
+        double secondsPerFrame,
+        double minPitchHz = 70,
+        double maxPitchHz = 400,
+        double nyquistHz = 8000)
     {
         ArgumentNullException.ThrowIfNull(options);
         if (secondsPerFrame <= 0)
@@ -47,10 +56,19 @@ public sealed class PlaceBaseline
         _options = options;
         _secondsPerFrame = secondsPerFrame;
         _holdFrames = Math.Max(1, (long)Math.Round(options.HoldSeconds / secondsPerFrame));
+        _minPitchHz = minPitchHz;
+        _maxPitchHz = maxPitchHz;
+        _nyquistHz = nyquistHz;
     }
 
-    /// <summary>The most recent frame's surprise (rectified departure from the expectation).</summary>
+    /// <summary>The most recent frame's total surprise.</summary>
     public double LastSurprise { get; private set; }
+
+    /// <summary>The timbre (mel) part of the most recent surprise — for diagnostics.</summary>
+    public double LastTimbreSurprise { get; private set; }
+
+    /// <summary>The extra-channels part of the most recent surprise — for diagnostics.</summary>
+    public double LastChannelSurprise { get; private set; }
 
     /// <summary>The most recent frame's salience threshold (floor or adaptive, whichever is higher).</summary>
     public double LastThreshold { get; private set; }
@@ -59,47 +77,61 @@ public sealed class PlaceBaseline
     public bool IsOpen => _open;
 
     /// <summary>
-    /// Take in one mel frame. Returns a <see cref="SalientEpisode"/> at the moment one closes,
+    /// Take in one auditory frame. Returns a <see cref="SalientEpisode"/> at the moment one closes,
     /// otherwise null.
     /// </summary>
-    public SalientEpisode? Observe(float[] mel)
+    public SalientEpisode? Observe(AuditoryFrame frame)
     {
-        ArgumentNullException.ThrowIfNull(mel);
+        ArgumentNullException.ThrowIfNull(frame);
 
-        // First frame: seed the expectation to what we hear, so there is no cold-start spike
-        // (a from-zero expectation would read the first real sound as a huge false onset).
-        if (_expectation is null)
+        var mel = frame.Mel;
+        var scalars = frame.ScalarChannels(_minPitchHz, _maxPitchHz, _nyquistHz);
+
+        // First frame: seed every expectation to what we hear, so there is no cold-start spike.
+        if (_melExpectation is null)
         {
-            _expectation = (float[])mel.Clone();
+            _melExpectation = (float[])mel.Clone();
+            _scalarExpectation = (float[])scalars.Clone();
             LastSurprise = 0;
+            LastTimbreSurprise = 0;
+            LastChannelSurprise = 0;
             LastThreshold = _options.Floor;
             _frame++;
             return null;
         }
 
-        if (mel.Length != _expectation.Length)
+        if (mel.Length != _melExpectation.Length)
         {
             throw new ArgumentException(
-                $"Mel width changed from {_expectation.Length} to {mel.Length}.", nameof(mel));
+                $"Mel width changed from {_melExpectation.Length} to {mel.Length}.", nameof(frame));
         }
 
-        // Compare: how much energy appeared *above* what was expected, per band. Rectified, so
-        // sound going quiet is not itself an onset — it just lets the episode settle closed.
-        var surprise = 0.0;
+        // Timbre: how much energy appeared *above* what was expected, per band (rectified).
+        var timbre = 0.0;
         for (var b = 0; b < mel.Length; b++)
         {
-            var over = mel[b] - _expectation[b];
+            var over = mel[b] - _melExpectation[b];
             if (over > 0)
             {
-                surprise += over;
+                timbre += over;
             }
         }
-        surprise /= mel.Length;
+        timbre /= mel.Length;
 
+        // Extra channels: weighted absolute departure — a change either way is an event.
+        var channels =
+            _options.LoudnessWeight * Math.Abs(scalars[0] - _scalarExpectation[0]) +
+            _options.PitchWeight * Math.Abs(scalars[1] - _scalarExpectation[1]) +
+            _options.HarmonicityWeight * Math.Abs(scalars[2] - _scalarExpectation[2]) +
+            _options.BrightnessWeight * Math.Abs(scalars[3] - _scalarExpectation[3]);
+
+        var surprise = timbre + channels;
         var threshold = Math.Max(_options.Floor, _options.SpikeRatio * _restingSurprise);
         var above = surprise > threshold;
 
         LastSurprise = surprise;
+        LastTimbreSurprise = timbre;
+        LastChannelSurprise = channels;
         LastThreshold = threshold;
 
         SalientEpisode? closed = null;
@@ -125,12 +157,16 @@ public sealed class PlaceBaseline
             closed = CloseEpisode();
         }
 
-        // Learn: the expectation always tracks toward what arrived (so steady sound becomes the
-        // new normal and settles to idle). The resting surprise tracks its own slow level, the
-        // anchor the threshold scales from.
+        // Learn: every expectation tracks toward what arrived (so steady sound becomes the new
+        // normal and settles to idle). The resting surprise tracks its own slow level.
+        var leak = (float)_options.ExpectationLeak;
         for (var b = 0; b < mel.Length; b++)
         {
-            _expectation[b] += (float)(_options.ExpectationLeak * (mel[b] - _expectation[b]));
+            _melExpectation[b] += leak * (mel[b] - _melExpectation[b]);
+        }
+        for (var c = 0; c < _scalarExpectation.Length; c++)
+        {
+            _scalarExpectation[c] += leak * (scalars[c] - _scalarExpectation[c]);
         }
 
         if (!_restingPrimed)

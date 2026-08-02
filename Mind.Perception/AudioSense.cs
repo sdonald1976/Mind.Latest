@@ -65,8 +65,10 @@ public sealed class AudioSense : BackgroundService
             MinHz = _cochlea.MinHz,
             MaxHz = _cochlea.MaxHz,
         });
-        var hearing = new HearingStream(source, cochlea);
-        var detector = new PlaceBaseline(_baseline, hearing.SecondsPerFrame);
+        var ear = new Ear(cochlea);
+        var hearing = new AuditoryStream(source, ear);
+        var detector = new PlaceBaseline(
+            _baseline, hearing.SecondsPerFrame, ear.MinPitchHz, ear.MaxPitchHz, ear.NyquistHz);
         var sourceLabel = $"audio:{Path.GetFileNameWithoutExtension(_hearing.SourcePath)}";
 
         _logger.LogInformation(
@@ -81,10 +83,10 @@ public sealed class AudioSense : BackgroundService
         {
             while (!stoppingToken.IsCancellationRequested)
             {
-                float[]? mel;
+                AuditoryFrame? frame;
                 try
                 {
-                    mel = hearing.Next();
+                    frame = hearing.Next();
                 }
                 catch (Exception ex)
                 {
@@ -92,7 +94,7 @@ public sealed class AudioSense : BackgroundService
                     break;
                 }
 
-                if (mel is null)
+                if (frame is null)
                 {
                     break; // source exhausted
                 }
@@ -101,7 +103,7 @@ public sealed class AudioSense : BackgroundService
 
                 try
                 {
-                    if (detector.Observe(mel) is { } episode)
+                    if (detector.Observe(frame) is { } episode)
                     {
                         Emit(episode, startedAt, sourceLabel);
                     }

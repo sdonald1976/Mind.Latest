@@ -9,6 +9,7 @@ using Mind.Hearing;
 //   Mind.Hearing.Tuner <media-file> [seconds] [sampleRate]
 //        [--leak=0.05] [--restingLeak=0.005] [--ratio=2.5] [--floor=0.05] [--hold=0.4] [--minEpisode=0.08]
 //        [--vigilance=0.9] [--units=64] [--trajSegments=3] [--exemplars=<dir>]  (dir: clips + index.html)
+//        [--wLoud=0.4] [--wPitch=0.4] [--wHarm=0.4] [--wBright=0.4]  (multi-dim salience channel weights)
 //        [--words | --words=onset]  cut words at pauses (default) or at onset peaks
 //        [--voiceFloor=0.02] [--gap=80] [--minWord=100] [--maxWord=800]  (pause mode, ms)
 //        [--wordFloor=0.15] [--wordMinGap=120] [--wordMaxLen=400]  (onset mode, ms)
@@ -77,13 +78,15 @@ Console.WriteLine($"  rms         : {rms:0.000}");
 //     against. Loudness alone can't tell a loud-but-expected song from a novel sound. ---
 source.Reset();
 var cochlea = new Cochlea(new CochleaOptions { SampleRate = rate });
-var stream = new HearingStream(source, cochlea);
+var ear = new Ear(cochlea);
+var stream = new AuditoryStream(source, ear);
 
-var frames = new List<float[]>();
-while (stream.Next() is { } mel)
+var auditoryFrames = new List<AuditoryFrame>();
+while (stream.Next() is { } auditoryFrame)
 {
-    frames.Add(mel);
+    auditoryFrames.Add(auditoryFrame);
 }
+var frames = auditoryFrames.Select(f => f.Mel).ToList(); // mel view, for the melgram and units
 
 Console.WriteLine();
 Console.WriteLine(
@@ -100,18 +103,25 @@ var options = new PlaceBaselineOptions
     Floor = FlagOr("floor", new PlaceBaselineOptions().Floor),
     HoldSeconds = FlagOr("hold", new PlaceBaselineOptions().HoldSeconds),
     MinEpisodeSeconds = FlagOr("minEpisode", new PlaceBaselineOptions().MinEpisodeSeconds),
+    LoudnessWeight = FlagOr("wLoud", new PlaceBaselineOptions().LoudnessWeight),
+    PitchWeight = FlagOr("wPitch", new PlaceBaselineOptions().PitchWeight),
+    HarmonicityWeight = FlagOr("wHarm", new PlaceBaselineOptions().HarmonicityWeight),
+    BrightnessWeight = FlagOr("wBright", new PlaceBaselineOptions().BrightnessWeight),
 };
 
-var detector = new PlaceBaseline(options, stream.SecondsPerFrame);
+var detector = new PlaceBaseline(options, stream.SecondsPerFrame, ear.MinPitchHz, ear.MaxPitchHz, ear.NyquistHz);
 var episodes = new List<SalientEpisode>();
-var surprises = new double[frames.Count];
-for (var i = 0; i < frames.Count; i++)
+var surprises = new double[auditoryFrames.Count];
+double sumTimbre = 0, sumChannel = 0;
+for (var i = 0; i < auditoryFrames.Count; i++)
 {
-    if (detector.Observe(frames[i]) is { } episode)
+    if (detector.Observe(auditoryFrames[i]) is { } episode)
     {
         episodes.Add(episode);
     }
     surprises[i] = detector.LastSurprise;
+    sumTimbre += detector.LastTimbreSurprise;
+    sumChannel += detector.LastChannelSurprise;
 }
 if (detector.Flush() is { } tail)
 {
@@ -129,12 +139,17 @@ if (surprises.Length == 0) minSurprise = 0;
 
 Console.WriteLine();
 Console.WriteLine(
-    $"place-baseline: leak {options.ExpectationLeak}, restingLeak {options.RestingLeak}, " +
-    $"spike x{options.SpikeRatio}, floor {options.Floor}, hold {options.HoldSeconds}s, " +
-    $"minEpisode {options.MinEpisodeSeconds}s");
+    $"place-baseline: leak {options.ExpectationLeak}, spike x{options.SpikeRatio}, floor {options.Floor}, " +
+    $"hold {options.HoldSeconds}s, minEpisode {options.MinEpisodeSeconds}s");
+Console.WriteLine(
+    $"  channel weights: loud {options.LoudnessWeight}, pitch {options.PitchWeight}, " +
+    $"harm {options.HarmonicityWeight}, bright {options.BrightnessWeight}");
 Console.WriteLine(
     $"  surprise: min {minSurprise:0.000}  mean {(surprises.Length > 0 ? sumSurprise / surprises.Length : 0):0.000}  " +
     $"max {maxSurprise:0.000}   -> {episodes.Count} salient episode(s)");
+Console.WriteLine(
+    $"  of which (mean): timbre {(surprises.Length > 0 ? sumTimbre / surprises.Length : 0):0.000}  " +
+    $"channels {(surprises.Length > 0 ? sumChannel / surprises.Length : 0):0.000}");
 
 if (frames.Count > 0)
 {
@@ -443,21 +458,12 @@ if (episodes.Count > 0)
     }
 }
 
-// --- The richer auditory bundle: loudness, pitch, harmonicity, brightness per frame. Verify each
-//     channel tracks something real (pitch moves with the voice; harmonicity high in speech, low in
-//     hiss/silence; brightness up on sibilants) before wiring them into salience. ---
-source.Reset();
-var ear = new Ear(new Cochlea(new CochleaOptions { SampleRate = rate }));
-var auditory = new AuditoryStream(source, ear);
-var auditoryFrames = new List<AuditoryFrame>();
-while (auditory.Next() is { } auditoryFrame)
-{
-    auditoryFrames.Add(auditoryFrame);
-}
-
+// --- The richer auditory bundle, per channel: verify each tracks something real (pitch moves with
+//     the voice; harmonicity high in speech, low in hiss/silence; brightness up on sibilants). These
+//     are the channels the place-baseline above now holds an expectation over. ---
 Console.WriteLine();
 Console.WriteLine(
-    $"auditory bundle: {auditoryFrames.Count:N0} frames, pitch range {ear.MinPitchHz:0}-{ear.MaxPitchHz:0} Hz");
+    $"auditory channels: {auditoryFrames.Count:N0} frames, pitch range {ear.MinPitchHz:0}-{ear.MaxPitchHz:0} Hz");
 
 if (auditoryFrames.Count > 0)
 {
@@ -465,7 +471,7 @@ if (auditoryFrames.Count > 0)
     Console.WriteLine($"  voiced: {voicedTotal:N0} frames ({100.0 * voicedTotal / auditoryFrames.Count:0}%)");
     Console.WriteLine("  per second:  loud | pitch  | harm | bright");
 
-    var perRow = Math.Max(1, (int)Math.Round(1.0 / auditory.SecondsPerFrame));
+    var perRow = Math.Max(1, (int)Math.Round(1.0 / stream.SecondsPerFrame));
     var row = 0;
     for (var i = 0; i < auditoryFrames.Count; i += perRow)
     {
