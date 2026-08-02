@@ -208,10 +208,17 @@ if (frames.Count > 0)
 // perceptions when the sense is graduated into the always-on service.
 if (episodes.Count > 0)
 {
+    const int maxEpisodeLines = 30; // a full-length file has thousands; don't flood the console
     Console.WriteLine();
     Console.WriteLine($"salient episodes ({episodes.Count}):");
-    foreach (var episode in episodes)
+    for (var i = 0; i < episodes.Count; i++)
     {
+        if (i >= maxEpisodeLines)
+        {
+            Console.WriteLine($"  ... +{episodes.Count - maxEpisodeLines} more");
+            break;
+        }
+        var episode = episodes[i];
         Console.WriteLine(
             $"  [{episode.Start.TotalSeconds,6:0.0}s -> {episode.End.TotalSeconds,6:0.0}s] " +
             $"peak {episode.PeakSalience:0.000}  mean {episode.MeanSalience:0.000}  " +
@@ -364,10 +371,13 @@ if (episodes.Count > 0)
         }
 
         var reused = codebook.Counts.Count(c => c > 1);
+        var full = codebook.UnitCount >= unitCapacity
+            ? "  <- FULL: codebook capped, distinct sounds force-merged; raise --units"
+            : "";
         Console.WriteLine();
         Console.WriteLine(
             $"  [{fingerprint.Name}] {codebook.UnitCount} units from {segments.Count} segments, " +
-            $"{reused} recurred (>1):");
+            $"{reused} recurred (>1):{full}");
 
         if (exemplarsDir is not null)
         {
