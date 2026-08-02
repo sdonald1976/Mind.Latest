@@ -6,4 +6,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Live microphone capture (WaveInEvent). Windows only; the same platform the rest runs on. -->
+    <PackageReference Include="NAudio" Version="2.2.1" />
+  </ItemGroup>
+
 </Project>

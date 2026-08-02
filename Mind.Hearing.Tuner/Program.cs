@@ -38,18 +38,51 @@ double? seconds = positionals.Length > 1 && double.TryParse(positionals[1], Cult
     : null;
 var rate = positionals.Length > 2 && int.TryParse(positionals[2], out var r) ? r : 16_000;
 
-Console.WriteLine($"Loading: {Path.GetFileName(path)}");
+var fromMic = path.Equals("mic", StringComparison.OrdinalIgnoreCase);
+Console.WriteLine(fromMic ? "Source: microphone" : $"Loading: {Path.GetFileName(path)}");
 Console.WriteLine($"  target rate : {rate} Hz{(seconds is { } limit ? $"   (first {limit:0.#}s)" : "")}");
 
 FileAudioSource source;
-try
+if (fromMic)
 {
-    source = FileAudioSource.Load(path, rate, seconds);
+    // Record a fixed slice from the mic, then analyse it exactly like a file.
+    var micSeconds = seconds ?? 15;
+    Console.WriteLine($"  recording {micSeconds:0.#}s — make some noise (talk, clap, go quiet)...");
+    try
+    {
+        using var mic = new MicAudioSource(rate);
+        var total = (int)(micSeconds * rate);
+        var captured = new float[total];
+        var got = 0;
+        while (got < total)
+        {
+            var n = mic.Read(captured.AsSpan(got));
+            if (n <= 0)
+            {
+                break;
+            }
+            got += n;
+        }
+        source = FileAudioSource.FromSamples(got == total ? captured : captured[..got], rate);
+        Console.WriteLine($"  captured {got:N0} samples ({(double)got / rate:0.0}s)");
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"MIC FAILED: {ex.Message}");
+        return 1;
+    }
 }
-catch (Exception ex)
+else
 {
-    Console.Error.WriteLine($"FAILED: {ex.Message}");
-    return 1;
+    try
+    {
+        source = FileAudioSource.Load(path, rate, seconds);
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"FAILED: {ex.Message}");
+        return 1;
+    }
 }
 
 var samples = source.Samples;

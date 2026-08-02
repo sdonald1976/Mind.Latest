@@ -14,9 +14,15 @@ public sealed class HearingOptions
     /// <summary>Whether the Mind listens at all. Off by default so the service runs without a source.</summary>
     public bool Enabled { get; set; }
 
+    /// <summary>Where the sound comes from: <c>"file"</c> (default) or <c>"mic"</c> (a live microphone).</summary>
+    public string Source { get; set; } = "file";
+
+    /// <summary>Which capture device when <see cref="Source"/> is "mic". 0 is the system default input.</summary>
+    public int MicDevice { get; set; }
+
     /// <summary>
-    /// The audio source. A media file today — an MP4's track is extracted to mono with ffmpeg —
-    /// with a live microphone to follow behind the same seam. Required when <see cref="Enabled"/>.
+    /// The audio file, when <see cref="Source"/> is "file" — an MP4's track is extracted to mono with
+    /// ffmpeg. Required for file source; ignored for the microphone.
     /// </summary>
     public string? SourcePath { get; set; }
 

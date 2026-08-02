@@ -38,20 +38,29 @@ public sealed class AudioSense : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!_hearing.Enabled || string.IsNullOrWhiteSpace(_hearing.SourcePath))
+        if (!_hearing.Enabled)
         {
-            _logger.LogInformation("Hearing is off (no audio source configured). The Mind runs without it.");
+            _logger.LogInformation("Hearing is off. The Mind runs without it.");
             return;
         }
 
-        FileAudioSource source;
+        var useMic = string.Equals(_hearing.Source, "mic", StringComparison.OrdinalIgnoreCase);
+        if (!useMic && string.IsNullOrWhiteSpace(_hearing.SourcePath))
+        {
+            _logger.LogInformation("Hearing is on but no file is configured and Source is not 'mic'. Nothing to hear.");
+            return;
+        }
+
+        IAudioSource source;
         try
         {
-            source = FileAudioSource.Load(_hearing.SourcePath, _hearing.SampleRate, _hearing.Seconds);
+            source = useMic
+                ? new MicAudioSource(_hearing.SampleRate, _hearing.MicDevice)
+                : FileAudioSource.Load(_hearing.SourcePath!, _hearing.SampleRate, _hearing.Seconds);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Could not open audio source '{Source}'. Hearing will not start.", _hearing.SourcePath);
+            _logger.LogError(ex, "Could not open the audio source. Hearing will not start.");
             return;
         }
 
@@ -69,11 +78,11 @@ public sealed class AudioSense : BackgroundService
         var hearing = new AuditoryStream(source, ear);
         var detector = new PlaceBaseline(
             _baseline, hearing.SecondsPerFrame, ear.MinPitchHz, ear.MaxPitchHz, ear.NyquistHz);
-        var sourceLabel = $"audio:{Path.GetFileNameWithoutExtension(_hearing.SourcePath)}";
+        var sourceLabel = useMic ? "audio:mic" : $"audio:{Path.GetFileNameWithoutExtension(_hearing.SourcePath)}";
 
         _logger.LogInformation(
-            "Hearing started. Source={Source} Rate={Rate}Hz Bands={Bands} Duration={Duration}",
-            _hearing.SourcePath, source.SampleRate, cochlea.Bands, source.Duration);
+            "Hearing started. Source={Source} Rate={Rate}Hz Bands={Bands}",
+            useMic ? "microphone" : _hearing.SourcePath, source.SampleRate, cochlea.Bands);
 
         var startedAt = DateTimeOffset.UtcNow;
         var clock = Stopwatch.StartNew();
@@ -144,6 +153,7 @@ public sealed class AudioSense : BackgroundService
         }
         finally
         {
+            (source as IDisposable)?.Dispose(); // release the microphone, if that's what we opened
             _logger.LogInformation(
                 "Hearing finished. Heard {Frames} frames over {Elapsed}.", frameIndex, clock.Elapsed);
         }

@@ -33,6 +33,9 @@ public sealed class FileAudioSource : IAudioSource
     /// <paramref name="seconds"/>, if given, limits how much is taken from the start — useful for
     /// tuning on a slice rather than a whole 40-minute clip.
     /// </summary>
+    /// <summary>Wrap already-decoded mono samples (e.g. a slice captured live) as a source.</summary>
+    public static FileAudioSource FromSamples(float[] samples, int sampleRate) => new(samples, sampleRate);
+
     public static FileAudioSource Load(string mediaPath, int sampleRate, double? seconds = null)
     {
         if (!File.Exists(mediaPath))
