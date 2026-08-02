@@ -8,7 +8,7 @@ using Mind.Hearing;
 //
 //   Mind.Hearing.Tuner <media-file> [seconds] [sampleRate]
 //        [--leak=0.05] [--restingLeak=0.005] [--ratio=2.5] [--floor=0.05] [--hold=0.4] [--minEpisode=0.08]
-//        [--vigilance=0.9] [--units=64] [--exemplars=<dir>]  (dir: write listenable clips + index.html)
+//        [--vigilance=0.9] [--units=64] [--trajSegments=3] [--exemplars=<dir>]  (dir: clips + index.html)
 //        [--words | --words=onset]  cut words at pauses (default) or at onset peaks
 //        [--voiceFloor=0.02] [--gap=80] [--minWord=100] [--maxWord=800]  (pause mode, ms)
 //        [--wordFloor=0.15] [--wordMinGap=120] [--wordMaxLen=400]  (onset mode, ms)
@@ -324,18 +324,21 @@ if (episodes.Count > 0)
         return all.Slice(lo, hi - lo).ToArray();
     }
 
-    // mel-avg only ever groups by texture, so word mode uses the pitch-robust methods only.
+    // mel-avg only ever groups by texture, so word mode uses the pitch-robust methods only. The
+    // trajectory keeps N slices across a word (its sound *sequence*) — more slices = finer word
+    // shape, which is what distinguishes "the" from "to" that averaging blurs away.
+    var trajSegments = (int)FlagOr("trajSegments", 3);
     var fingerprints = wordMode
         ? new IFingerprint[]
         {
             new MfccFingerprint(cochlea.Bands, coefficients: 13),
-            new MfccTrajectoryFingerprint(cochlea.Bands, coefficients: 13, segments: 3),
+            new MfccTrajectoryFingerprint(cochlea.Bands, coefficients: 13, segments: trajSegments),
         }
         : new IFingerprint[]
         {
             new MelAverageFingerprint(),
             new MfccFingerprint(cochlea.Bands, coefficients: 13),
-            new MfccTrajectoryFingerprint(cochlea.Bands, coefficients: 13, segments: 3),
+            new MfccTrajectoryFingerprint(cochlea.Bands, coefficients: 13, segments: trajSegments),
         };
 
     var grain = wordMode ? (useOnset ? "word-onsets" : "word-pauses") : "salient-episodes";
