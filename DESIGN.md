@@ -246,9 +246,12 @@ Design points, decided up front:
    the front-end now emits an `AuditoryFrame` per hop: mel plus loudness, pitch,
    harmonicity, and brightness (one autocorrelation gives pitch + harmonicity; the
    cochlea's FFT gives brightness). Verified on real audio — pitch in the voice range,
-   harmonicity high in speech and low in silence, brightness up on sibilants. Still to
-   do: feed these into the place-baseline for *multi-dimensional* salience. See
-   *Richer hearing*.
+   harmonicity high in speech and low in silence, brightness up on sibilants. **Wired
+   into salience:** the place-baseline now holds an expectation over the whole bundle,
+   so a new voice, a pitch/melody shift, or a noise↔tone change is salient even at
+   constant timbre (per-channel weights, config; 0 recovers the mel-only baseline). Its
+   payoff is clearest in a quiet place; on busy audio the channels mostly raise the
+   background. See *Richer hearing*.
 6. Fact distillation — turning memories into facts (where learning lives).
 7. Onward from there, one piece at a time.
 
