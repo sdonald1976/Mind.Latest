@@ -27,13 +27,18 @@ public readonly record struct AuditoryCharacter(float Loudness, float Harmonicit
 /// <param name="MeanSalience">The average departure across the episode's salient frames.</param>
 /// <param name="Frames">How many frames were above threshold.</param>
 /// <param name="Character">What the sound was like, acoustically.</param>
+/// <param name="MeanMel">
+/// The episode's mean log-mel spectrum — its timbre signature, for recognising the same sound again
+/// (fingerprint + cluster into recurring sound-units).
+/// </param>
 public sealed record SalientEpisode(
     TimeSpan Start,
     TimeSpan End,
     double PeakSalience,
     double MeanSalience,
     int Frames,
-    AuditoryCharacter Character)
+    AuditoryCharacter Character,
+    float[] MeanMel)
 {
     public TimeSpan Duration => End - Start;
 }

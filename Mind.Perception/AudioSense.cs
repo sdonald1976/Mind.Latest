@@ -78,6 +78,13 @@ public sealed class AudioSense : BackgroundService
         var hearing = new AuditoryStream(source, ear);
         var detector = new PlaceBaseline(
             _baseline, hearing.SecondsPerFrame, ear.MinPitchHz, ear.MaxPitchHz, ear.NyquistHz);
+
+        // Identity: fingerprint each episode (pitch-robust MFCC of its mean spectrum) and cluster
+        // into recurring sound-units, so a perception can carry "the same sound again." Coarse
+        // (voice/source grain, not words) and in-memory for now — units reset when the Mind restarts.
+        var fingerprint = new MfccFingerprint(cochlea.Bands, coefficients: 13);
+        var units = new SoundUnitCodebook(vigilance: 0.9, capacity: 128);
+
         var sourceLabel = useMic ? "audio:mic" : $"audio:{Path.GetFileNameWithoutExtension(_hearing.SourcePath)}";
 
         _logger.LogInformation(
@@ -114,7 +121,7 @@ public sealed class AudioSense : BackgroundService
                 {
                     if (detector.Observe(frame) is { } episode)
                     {
-                        Emit(episode, startedAt, sourceLabel);
+                        Emit(episode, startedAt, sourceLabel, fingerprint, units);
                     }
                 }
                 catch (Exception ex)
@@ -143,7 +150,7 @@ public sealed class AudioSense : BackgroundService
             {
                 if (detector.Flush() is { } tail)
                 {
-                    Emit(tail, startedAt, sourceLabel);
+                    Emit(tail, startedAt, sourceLabel, fingerprint, units);
                 }
             }
             catch (Exception ex)
@@ -159,22 +166,33 @@ public sealed class AudioSense : BackgroundService
         }
     }
 
-    private void Emit(SalientEpisode episode, DateTimeOffset startedAt, string sourceLabel)
+    private void Emit(
+        SalientEpisode episode,
+        DateTimeOffset startedAt,
+        string sourceLabel,
+        MfccFingerprint fingerprint,
+        SoundUnitCodebook units)
     {
-        // Honest coarseness: `What` describes what the sound was *like* (loud/tonal/bright...), not
-        // what it *was* — identity is a later piece. Intensity carries the salience; Source the sense.
+        // Identity: which recurring sound-unit is this? Same id again = "the same sound."
+        var unit = units.Assign(fingerprint.Compute([episode.MeanMel]));
+        var timesHeard = units.Counts[unit];
+
+        // `What` describes what the sound was *like* (loud/tonal/bright...), not what it *was*.
+        // Unit carries coarse identity; Intensity the salience; Source the sense.
         var what = SoundDescriptor.Describe(episode.Character);
         var perception = new Mind.Contracts.Perception(
             What: what,
             At: startedAt + episode.Start,
             Intensity: episode.PeakSalience,
-            Source: sourceLabel);
+            Source: sourceLabel,
+            Unit: unit);
 
         if (_stream.Submit(perception))
         {
             _logger.LogInformation(
-                "Heard {What} at {At:mm\\:ss\\.f} (peak {Intensity:0.00}, {Duration:0.0}s).",
-                what, episode.Start, episode.PeakSalience, episode.Duration.TotalSeconds);
+                "Heard {What} at {At:mm\\:ss\\.f} (peak {Intensity:0.00}, {Duration:0.0}s) — unit #{Unit} ({Recur}).",
+                what, episode.Start, episode.PeakSalience, episode.Duration.TotalSeconds, unit,
+                timesHeard > 1 ? $"heard {timesHeard}×" : "new");
         }
         else
         {

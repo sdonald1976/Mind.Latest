@@ -46,6 +46,7 @@ public sealed class PlaceBaseline
     private double _sumBrightness;
     private double _sumPitch;
     private int _voicedFrames;
+    private double[]? _sumMel; // accumulating mean spectrum, for the sound-unit fingerprint
 
     public PlaceBaseline(
         PlaceBaselineOptions options,
@@ -99,6 +100,7 @@ public sealed class PlaceBaseline
         {
             _melExpectation = (float[])mel.Clone();
             _scalarExpectation = (float[])scalars.Clone();
+            _sumMel = new double[mel.Length];
             LastSurprise = 0;
             LastTimbreSurprise = 0;
             LastChannelSurprise = 0;
@@ -154,6 +156,7 @@ public sealed class PlaceBaseline
                 _aboveFrames = 0;
                 _sumLoudness = _sumHarmonicity = _sumBrightness = _sumPitch = 0;
                 _voicedFrames = 0;
+                Array.Clear(_sumMel!);
             }
 
             _lastAboveFrame = _frame;
@@ -168,6 +171,10 @@ public sealed class PlaceBaseline
             {
                 _sumPitch += frame.PitchHz;
                 _voicedFrames++;
+            }
+            for (var b = 0; b < mel.Length; b++)
+            {
+                _sumMel![b] += mel[b];
             }
         }
         else if (_open && _frame - _lastAboveFrame >= _holdFrames)
@@ -215,13 +222,20 @@ public sealed class PlaceBaseline
             BrightnessHz: (float)(_sumBrightness / n),
             PitchHz: _voicedFrames > 0 ? (float)(_sumPitch / _voicedFrames) : 0f);
 
+        var meanMel = new float[_sumMel!.Length];
+        for (var b = 0; b < meanMel.Length; b++)
+        {
+            meanMel[b] = (float)(_sumMel[b] / n);
+        }
+
         var episode = new SalientEpisode(
             Start: TimeSpan.FromSeconds(_openFrame * _secondsPerFrame),
             End: TimeSpan.FromSeconds(_lastAboveFrame * _secondsPerFrame),
             PeakSalience: _peak,
             MeanSalience: _aboveFrames > 0 ? _sum / _aboveFrames : 0,
             Frames: _aboveFrames,
-            Character: character);
+            Character: character,
+            MeanMel: meanMel);
 
         _open = false;
         return episode.Duration.TotalSeconds >= _options.MinEpisodeSeconds ? episode : null;

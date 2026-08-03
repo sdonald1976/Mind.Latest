@@ -13,8 +13,14 @@ namespace Mind.Contracts;
 /// (A manual poke sets its own value; a real sense fills this from measured salience.)
 /// </param>
 /// <param name="Source">Where the perception came from (a caller, a sensor).</param>
+/// <param name="Unit">
+/// Identity, when a sense can recognise recurrence: the stable id of the recurring sound-unit this
+/// perception was matched to. The same id twice means "the same sound again." Null when unknown (a
+/// manual poke, or a sense that doesn't cluster). Coarse — voice/source grain, not words.
+/// </param>
 public sealed record Perception(
     string What,
     DateTimeOffset At,
     double Intensity = 1.0,
-    string? Source = null);
+    string? Source = null,
+    int? Unit = null);
