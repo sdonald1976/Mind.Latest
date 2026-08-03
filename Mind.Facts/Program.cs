@@ -12,6 +12,10 @@ var rabbitConnectionString =
     ?? throw new InvalidOperationException(
         "RabbitMQ connection string not configured. Expected the AppHost to inject 'ConnectionStrings:rabbitmq'.");
 
+// The distiller holds the Mind's distilled knowledge (the known sounds), folded from the memory
+// stream. Singleton, so it accumulates across every memory the consumer hands it.
+builder.Services.AddSingleton<Distiller>();
+
 builder.Services.AddMassTransit(x =>
 {
     x.AddConsumer<MemoryHeardConsumer>();
@@ -59,12 +63,12 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// --- Endpoints. Nothing distilled yet — increment 1 only listens; GET / is a placeholder for the
-//     coming fact API. ---
-app.MapGet("/", () => Results.Ok(new
-{
-    facts = 0,
-    note = "listening to the memory stream; the distiller is the next step.",
-}));
+// --- Endpoints. ---
+
+// How many standing facts does the Mind hold right now?
+app.MapGet("/", (Distiller distiller) => Results.Ok(new { facts = distiller.Facts().Count }));
+
+// What does the Mind know? The distilled facts, strongest-held first.
+app.MapGet("/facts", (Distiller distiller) => Results.Ok(distiller.Facts()));
 
 app.Run();

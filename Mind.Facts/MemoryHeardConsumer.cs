@@ -4,16 +4,20 @@ using Mind.Contracts;
 namespace Mind.Facts;
 
 /// <summary>
-/// Increment 1 of fact distillation: the Facts service simply listens to the memory stream and notes
-/// what it hears — a second consumer of <see cref="MemoryFormed"/> alongside Memory, proving the
-/// pub-sub design (another mind-part joins by listening, touching nothing else). The distiller that
-/// turns these memories into standing facts is the next step; for now it just watches the units go by.
+/// Receives each formed memory off the bus (a second consumer alongside Memory) and folds it into the
+/// <see cref="Distiller"/>, which turns recurring sound-units into standing "known sound" facts. This
+/// is where learning happens: the Mind hears the same sound often enough and comes to know it.
 /// </summary>
 public sealed class MemoryHeardConsumer : IConsumer<MemoryFormed>
 {
+    private readonly Distiller _distiller;
     private readonly ILogger<MemoryHeardConsumer> _logger;
 
-    public MemoryHeardConsumer(ILogger<MemoryHeardConsumer> logger) => _logger = logger;
+    public MemoryHeardConsumer(Distiller distiller, ILogger<MemoryHeardConsumer> logger)
+    {
+        _distiller = distiller;
+        _logger = logger;
+    }
 
     public Task Consume(ConsumeContext<MemoryFormed> context)
     {
@@ -21,8 +25,13 @@ public sealed class MemoryHeardConsumer : IConsumer<MemoryFormed>
         var units = string.Join(", ", memory.Perceptions.Select(p => p.Unit?.ToString() ?? "?"));
 
         _logger.LogInformation(
-            "Heard a memory from {Place}: {Count} perception(s), units [{Units}] over {Duration}.",
-            memory.Place, memory.Perceptions.Count, units, memory.Duration);
+            "Heard a memory from {Place}: {Count} perception(s), units [{Units}].",
+            memory.Place, memory.Perceptions.Count, units);
+
+        foreach (var unit in _distiller.Observe(memory))
+        {
+            _logger.LogInformation("Learned a fact: I now know sound #{Unit} — heard it enough to count.", unit);
+        }
 
         return Task.CompletedTask;
     }
