@@ -26,4 +26,11 @@ builder.AddProject<Projects.Mind_Perception>("mind-perception")
     .WithReference(rabbitmq)
     .WaitFor(rabbitmq);
 
+// Facts: subscribes to the same memory stream and distils standing facts from it
+// (where learning lives). A second consumer alongside Memory — the pub-sub design
+// paying off: it joins by listening, touching nothing else.
+builder.AddProject<Projects.Mind_Facts>("mind-facts")
+    .WithReference(rabbitmq)
+    .WaitFor(rabbitmq);
+
 builder.Build().Run();

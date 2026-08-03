@@ -15,6 +15,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mind.Hearing", "Mind.Hearin
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mind.Hearing.Tuner", "Mind.Hearing.Tuner\Mind.Hearing.Tuner.csproj", "{A2F72971-7828-4472-B87F-96C95A56F7CC}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mind.Facts", "Mind.Facts\Mind.Facts.csproj", "{6D205C10-D1C7-4209-8D11-CBAF5CF5CCEC}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -97,6 +99,18 @@ Global
 		{A2F72971-7828-4472-B87F-96C95A56F7CC}.Release|x64.Build.0 = Release|Any CPU
 		{A2F72971-7828-4472-B87F-96C95A56F7CC}.Release|x86.ActiveCfg = Release|Any CPU
 		{A2F72971-7828-4472-B87F-96C95A56F7CC}.Release|x86.Build.0 = Release|Any CPU
+		{6D205C10-D1C7-4209-8D11-CBAF5CF5CCEC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6D205C10-D1C7-4209-8D11-CBAF5CF5CCEC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6D205C10-D1C7-4209-8D11-CBAF5CF5CCEC}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{6D205C10-D1C7-4209-8D11-CBAF5CF5CCEC}.Debug|x64.Build.0 = Debug|Any CPU
+		{6D205C10-D1C7-4209-8D11-CBAF5CF5CCEC}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{6D205C10-D1C7-4209-8D11-CBAF5CF5CCEC}.Debug|x86.Build.0 = Debug|Any CPU
+		{6D205C10-D1C7-4209-8D11-CBAF5CF5CCEC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6D205C10-D1C7-4209-8D11-CBAF5CF5CCEC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6D205C10-D1C7-4209-8D11-CBAF5CF5CCEC}.Release|x64.ActiveCfg = Release|Any CPU
+		{6D205C10-D1C7-4209-8D11-CBAF5CF5CCEC}.Release|x64.Build.0 = Release|Any CPU
+		{6D205C10-D1C7-4209-8D11-CBAF5CF5CCEC}.Release|x86.ActiveCfg = Release|Any CPU
+		{6D205C10-D1C7-4209-8D11-CBAF5CF5CCEC}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

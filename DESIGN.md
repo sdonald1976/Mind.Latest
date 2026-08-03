@@ -209,6 +209,39 @@ Design points, decided up front:
 - **Caveats.** Pitch makes octave errors (YIN helps); each channel adds a scale knob;
   the 8kHz ceiling still caps brightness/sibilance.
 
+## Fact distillation: the memory → fact bridge (building)
+
+Decision 3: learning is the distillation of facts from memories. A new service,
+`Mind.Facts`, does it — and it is exactly the "future service subscribes to the
+memory stream" the bus was built for.
+
+- **Subscribes to `MemoryFormed`** on RabbitMQ, alongside Memory — a second consumer
+  on the same stream (pub-sub fan-out; nothing else changes). This is the design
+  finally paying off: another mind-part joins by listening, touching nothing.
+- **Distils by evidence, not by an instant.** A candidate regularity is a hunch on
+  probation *forever* (the reference lab's "a rule pays rent"): it gains confidence
+  each time it keeps holding, loses it when it doesn't, and is evicted when it stops
+  earning. No magic "now it's a fact" threshold — just accumulated evidence, so a
+  fluke never hardens into a false fact.
+- **First fact kind: a *known sound*.** The simplest real regularity on what we have:
+  a sound-`unit` that recurs across memories earns the standing fact "the Mind knows
+  this sound" — confidence rising with each recurrence, decaying slowly without. The
+  Mind builds a repertoire of the sounds of its world. Relationships (co-occurrence,
+  "#7 precedes #3") come after.
+- **Its own store** (Postgres, its own tables) and **`GET /facts`** to read them;
+  later a `FactFormed` message a reasoning service can subscribe to in turn.
+- **A `Fact` in Contracts** — a statement, a kind, a confidence, and a *decaying* link
+  to origin (decision 2's "loses track of where it came from" — the fuzziness is
+  built in, a feature).
+
+Honest dependency: durable facts about *units* across restarts need the sound-unit
+codebook to **persist** (unit ids stable run to run); today it is in-memory, so
+distillation is within-session until we persist it — a small related piece.
+
+Build sub-order: (1) the service receives the memory stream; (2) the distiller +
+pays-rent confidence over recurring units; (3) the fact store + recall; (4) persist
+the codebook for cross-session facts.
+
 ## Build order
 
 1. **The heartbeat** *(built — `Mind.Perception`)* — always-on, runs in time
@@ -256,7 +289,10 @@ Design points, decided up front:
    constant timbre (per-channel weights, config; 0 recovers the mel-only baseline). Its
    payoff is clearest in a quiet place; on busy audio the channels mostly raise the
    background. See *Richer hearing*.
-6. Fact distillation — turning memories into facts (where learning lives).
+6. **Fact distillation — turning memories into facts** *(building — `Mind.Facts`)* —
+   a new service subscribes to the memory stream and distils standing facts by
+   evidence (pays-rent confidence), starting with recurring sound-units ("a known
+   sound"). Where *learning* lives. See *Fact distillation*.
 7. Onward from there, one piece at a time.
 
 ## The "later" shelf (deferred, not forgotten)

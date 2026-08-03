@@ -19,6 +19,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Mind.Perception\Mind.Perception.csproj" />
     <ProjectReference Include="..\Mind.Memory\Mind.Memory.csproj" />
+    <ProjectReference Include="..\Mind.Facts\Mind.Facts.csproj" />
   </ItemGroup>
 
 </Project>
