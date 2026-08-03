@@ -238,11 +238,14 @@ Design points, decided up front:
    minute of a real video and formed a durable memory of it — a bundle of `sound`
    perceptions, each carrying its salience — decision 7, real. See *The first
    sense: audio*.
-4. **Sound-units — perceptions gain identity** *(bench; walled at words)* — recognize
-   the same sound recurring (MFCC fingerprint + bounded strict codebook). Works at
-   *voice/source* grain (reliably re-recognizes a speaker/voice); **word identity is a
-   confirmed wall** — audio alone reaches word *shape*, not *which word* (that needs
-   grounding). Machinery kept for when grounding arrives. See *Toward words*.
+4. **Sound-units — perceptions gain identity** *(graduated, voice-grain — `AudioSense`)* —
+   the live sense fingerprints each salient episode (MFCC of its mean spectrum) and
+   clusters into a bounded strict codebook, so a `Perception` carries a `Unit` id: the
+   same id twice = *the same sound again*. In-memory for now (resets on restart;
+   persistence is a later refinement). Works at *voice/source* grain; **word identity
+   stays a confirmed wall** — audio reaches word *shape*, not *which word* (that needs
+   grounding). Perceptions also carry a coarse `What` description now (see the audio
+   section). See *Toward words*.
 5. **Richer hearing — the auditory-nerve bundle** *(built — `Mind.Hearing`, `Ear`)* —
    the front-end now emits an `AuditoryFrame` per hop: mel plus loudness, pitch,
    harmonicity, and brightness (one autocorrelation gives pitch + harmonicity; the
