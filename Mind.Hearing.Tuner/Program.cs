@@ -269,8 +269,8 @@ if (episodes.Count > 0)
         var episode = episodes[i];
         Console.WriteLine(
             $"  [{episode.Start.TotalSeconds,6:0.0}s -> {episode.End.TotalSeconds,6:0.0}s] " +
-            $"peak {episode.PeakSalience:0.000}  mean {episode.MeanSalience:0.000}  " +
-            $"{episode.Duration.TotalSeconds:0.0}s ({episode.Frames} frames)");
+            $"peak {episode.PeakSalience:0.000}  {episode.Duration.TotalSeconds:0.0}s " +
+            $"({episode.Frames} frames) — {SoundDescriptor.Describe(episode.Character)}");
     }
 }
 

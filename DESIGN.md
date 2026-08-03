@@ -149,9 +149,10 @@ loop — separate from the 500ms heartbeat.
   job is unchanged: bracket nearby salient perceptions into a memory, close on
   return to idle, publish it to the bus.
 
-What a `Perception`'s `What` *says* is deliberately coarse at first: we detect
-*that* something departed and *how much*, not yet *what it was*. Naming — stable,
-recurring sound-units — is a later piece (form before meaning).
+What a `Perception`'s `What` *says* is a coarse, honest **description** — built from
+the auditory bundle, it says what the sound was *like* ("a loud tonal sound", "a
+faint bright noisy sound"), never what it *was*. Identity — recognising *which*
+recurring sound/voice — is a later piece (form before meaning).
 
 Two tests, not to be confused. This corpus (produced kids' videos, near-
 continuously active) tunes the *mechanism* — a baseline that adapts to the show's

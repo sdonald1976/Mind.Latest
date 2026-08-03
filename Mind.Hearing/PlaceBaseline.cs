@@ -40,6 +40,13 @@ public sealed class PlaceBaseline
     private double _sum;
     private int _aboveFrames;
 
+    // The episode's accumulating acoustic character (averaged over its salient frames).
+    private double _sumLoudness;
+    private double _sumHarmonicity;
+    private double _sumBrightness;
+    private double _sumPitch;
+    private int _voicedFrames;
+
     public PlaceBaseline(
         PlaceBaselineOptions options,
         double secondsPerFrame,
@@ -145,12 +152,23 @@ public sealed class PlaceBaseline
                 _peak = surprise;
                 _sum = 0;
                 _aboveFrames = 0;
+                _sumLoudness = _sumHarmonicity = _sumBrightness = _sumPitch = 0;
+                _voicedFrames = 0;
             }
 
             _lastAboveFrame = _frame;
             _peak = Math.Max(_peak, surprise);
             _sum += surprise;
             _aboveFrames++;
+
+            _sumLoudness += frame.Loudness;
+            _sumHarmonicity += frame.Harmonicity;
+            _sumBrightness += frame.BrightnessHz;
+            if (frame.Voiced)
+            {
+                _sumPitch += frame.PitchHz;
+                _voicedFrames++;
+            }
         }
         else if (_open && _frame - _lastAboveFrame >= _holdFrames)
         {
@@ -190,12 +208,20 @@ public sealed class PlaceBaseline
     // minimum — a momentary flicker, not a real event — so the caller emits nothing.
     private SalientEpisode? CloseEpisode()
     {
+        var n = Math.Max(1, _aboveFrames);
+        var character = new AuditoryCharacter(
+            Loudness: (float)(_sumLoudness / n),
+            Harmonicity: (float)(_sumHarmonicity / n),
+            BrightnessHz: (float)(_sumBrightness / n),
+            PitchHz: _voicedFrames > 0 ? (float)(_sumPitch / _voicedFrames) : 0f);
+
         var episode = new SalientEpisode(
             Start: TimeSpan.FromSeconds(_openFrame * _secondsPerFrame),
             End: TimeSpan.FromSeconds(_lastAboveFrame * _secondsPerFrame),
             PeakSalience: _peak,
             MeanSalience: _aboveFrames > 0 ? _sum / _aboveFrames : 0,
-            Frames: _aboveFrames);
+            Frames: _aboveFrames,
+            Character: character);
 
         _open = false;
         return episode.Duration.TotalSeconds >= _options.MinEpisodeSeconds ? episode : null;

@@ -161,10 +161,11 @@ public sealed class AudioSense : BackgroundService
 
     private void Emit(SalientEpisode episode, DateTimeOffset startedAt, string sourceLabel)
     {
-        // Coarse on purpose: we know *that* something departed and *how much*, not yet *what* it
-        // was (naming is a later piece). Intensity carries the salience; Source names the sense.
+        // Honest coarseness: `What` describes what the sound was *like* (loud/tonal/bright...), not
+        // what it *was* — identity is a later piece. Intensity carries the salience; Source the sense.
+        var what = SoundDescriptor.Describe(episode.Character);
         var perception = new Mind.Contracts.Perception(
-            What: "sound",
+            What: what,
             At: startedAt + episode.Start,
             Intensity: episode.PeakSalience,
             Source: sourceLabel);
@@ -172,8 +173,8 @@ public sealed class AudioSense : BackgroundService
         if (_stream.Submit(perception))
         {
             _logger.LogInformation(
-                "Heard a salient sound at {At:mm\\:ss\\.f} (peak {Intensity:0.00}, {Duration:0.0}s).",
-                episode.Start, episode.PeakSalience, episode.Duration.TotalSeconds);
+                "Heard {What} at {At:mm\\:ss\\.f} (peak {Intensity:0.00}, {Duration:0.0}s).",
+                what, episode.Start, episode.PeakSalience, episode.Duration.TotalSeconds);
         }
         else
         {
