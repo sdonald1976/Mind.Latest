@@ -11,6 +11,7 @@ var pgPassword = builder.AddParameter("postgres-password", secret: true);
 var postgres = builder.AddPostgres("postgres", password: pgPassword).WithDataVolume();
 
 var memoryDb = postgres.AddDatabase("mind-memory-db");
+var factsDb = postgres.AddDatabase("mind-facts-db");
 
 // Memory: consumes formed-memory messages, stores them, and serves recall.
 var memory = builder.AddProject<Projects.Mind_Memory>("mind-memory")
@@ -30,7 +31,9 @@ builder.AddProject<Projects.Mind_Perception>("mind-perception")
 // (where learning lives). A second consumer alongside Memory — the pub-sub design
 // paying off: it joins by listening, touching nothing else.
 builder.AddProject<Projects.Mind_Facts>("mind-facts")
+    .WithReference(factsDb)
     .WithReference(rabbitmq)
+    .WaitFor(factsDb)
     .WaitFor(rabbitmq);
 
 builder.Build().Run();

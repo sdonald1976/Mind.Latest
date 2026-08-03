@@ -228,8 +228,13 @@ memory stream" the bus was built for.
   this sound" — confidence rising with each recurrence, decaying slowly without. The
   Mind builds a repertoire of the sounds of its world. Relationships (co-occurrence,
   "#7 precedes #3") come after.
-- **Its own store** (Postgres, its own tables) and **`GET /facts`** to read them;
-  later a `FactFormed` message a reasoning service can subscribe to in turn.
+- **Its own store** *(built — Postgres `mind-facts-db`, table `facts`)* keyed by
+  sound-unit, one standing row per known sound. The distiller stays the in-memory
+  learning engine; after each memory the consumer writes the known set through to
+  disk (reconcile-in-place, so forgotten sounds are pruned), and on startup the
+  distiller is **seeded** from disk so learning resumes rather than restarting blank.
+  **`GET /facts`** recalls the durable set; later a `FactFormed` message a reasoning
+  service can subscribe to in turn.
 - **A `Fact` in Contracts** — a statement, a kind, a confidence, and a *decaying* link
   to origin (decision 2's "loses track of where it came from" — the fuzziness is
   built in, a feature).
@@ -238,9 +243,14 @@ Honest dependency: durable facts about *units* across restarts need the sound-un
 codebook to **persist** (unit ids stable run to run); today it is in-memory, so
 distillation is within-session until we persist it — a small related piece.
 
-Build sub-order: (1) the service receives the memory stream; (2) the distiller +
-pays-rent confidence over recurring units; (3) the fact store + recall; (4) persist
-the codebook for cross-session facts.
+Build sub-order: (1) the service receives the memory stream *(built)*; (2) the
+distiller + pays-rent confidence over recurring units *(built)*; (3) the fact store +
+recall + seed-on-startup *(built)*; (4) persist the codebook for cross-session facts.
+With (1)–(3) done, facts now survive a restart of the Facts service. Full-stack
+restarts still reset the *meaning* of unit ids until (4), because Perception rebuilds
+its codebook from scratch — so "sound #3" may not be the same sound next run. (4)
+closes that: a persistent codebook makes the ids, and thus the durable facts, stable
+across sessions.
 
 ## Build order
 

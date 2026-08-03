@@ -7,7 +7,8 @@ namespace Mind.Facts;
 /// confidence — it pays its rent; one that stops being heard slowly fades. When a unit's confidence
 /// crosses the bar it becomes a standing fact: "the Mind knows this sound." There is no magic instant
 /// it becomes true — just accumulated evidence, so a one-off never hardens into a false fact.
-/// In-memory for now (it resets with the service; durable storage is the next step).
+/// The engine runs in memory; its known facts are persisted to Postgres by the service, and
+/// <see cref="Seed"/> restores them at startup so learning resumes across restarts.
 /// </summary>
 public sealed class Distiller
 {
@@ -20,6 +21,31 @@ public sealed class Distiller
 
     private readonly object _gate = new();
     private readonly Dictionary<int, Knowledge> _byUnit = new();
+
+    /// <summary>
+    /// Restore known facts from durable storage at startup, so the Mind resumes learning where it left
+    /// off rather than forgetting everything on restart. Each seeded fact re-enters as a tracked unit
+    /// with its stored confidence and evidence; from there it keeps paying rent like any other.
+    /// </summary>
+    public void Seed(IEnumerable<Fact> facts)
+    {
+        lock (_gate)
+        {
+            foreach (var fact in facts)
+            {
+                if (fact.Unit is null)
+                {
+                    continue;
+                }
+
+                _byUnit[fact.Unit.Value] = new Knowledge
+                {
+                    Confidence = fact.Confidence,
+                    TimesHeard = fact.Evidence,
+                };
+            }
+        }
+    }
 
     /// <summary>Fold one memory in. Returns any units that <em>newly</em> became known, for logging.</summary>
     public IReadOnlyList<int> Observe(Memory memory)

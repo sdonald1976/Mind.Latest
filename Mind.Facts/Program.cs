@@ -1,8 +1,16 @@
 using MassTransit;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.EntityFrameworkCore;
 using Mind.Facts;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Postgres-backed persistence for the distilled facts. The connection is supplied by the AppHost via
+// the "mind-facts-db" reference; this Aspire integration also adds retries, health checks, and
+// telemetry. Facts live in their own database — knowledge is this service's to keep, separate from
+// Memory's log.
+builder.AddNpgsqlDbContext<FactDbContext>("mind-facts-db");
+builder.Services.AddScoped<IFactStore, EfFactStore>();
 
 // Messaging: subscribe to the memory stream. As a separate consumer from Memory, MassTransit gives
 // this service its own queue on the same exchange — so every formed memory fans out to both. This is
@@ -56,6 +64,30 @@ app.UseExceptionHandler(handler => handler.Run(async context =>
     await context.Response.WriteAsJsonAsync(new { error = "internal error" });
 }));
 
+// Make sure the schema exists, then restore what the Mind already knew. Seeding the distiller from
+// disk is what makes learning survive a restart: it resumes from its stored confidence rather than
+// starting blank. EnsureCreated is fine while there is a single table (see DESIGN.md).
+await using (var scope = app.Services.CreateAsyncScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<FactDbContext>();
+    var distiller = scope.ServiceProvider.GetRequiredService<Distiller>();
+    try
+    {
+        await db.Database.EnsureCreatedAsync();
+
+        var store = scope.ServiceProvider.GetRequiredService<IFactStore>();
+        var known = await store.AllAsync();
+        distiller.Seed(known);
+
+        log.LogInformation("Facts database ready; restored {Count} known sound(s).", known.Count);
+    }
+    catch (Exception ex)
+    {
+        log.LogCritical(ex, "Failed to ready the facts database.");
+        throw;
+    }
+}
+
 // Swagger UI at /swagger while developing.
 if (app.Environment.IsDevelopment())
 {
@@ -65,10 +97,12 @@ if (app.Environment.IsDevelopment())
 
 // --- Endpoints. ---
 
-// How many standing facts does the Mind hold right now?
-app.MapGet("/", (Distiller distiller) => Results.Ok(new { facts = distiller.Facts().Count }));
+// How many standing facts does the Mind hold right now? Read from disk — the durable picture.
+app.MapGet("/", async (IFactStore store) =>
+    Results.Ok(new { facts = await store.CountAsync() }));
 
-// What does the Mind know? The distilled facts, strongest-held first.
-app.MapGet("/facts", (Distiller distiller) => Results.Ok(distiller.Facts()));
+// What does the Mind know? The distilled facts on disk, strongest-held first.
+app.MapGet("/facts", async (IFactStore store) =>
+    Results.Ok(await store.AllAsync()));
 
 app.Run();
