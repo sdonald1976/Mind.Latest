@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Mind.Hearing;
 
@@ -16,10 +17,15 @@ namespace Mind.Perception;
 /// </summary>
 public sealed class AudioSense : BackgroundService
 {
+    // The sound-unit codebook is 13-coefficient MFCC (see below); a stored codebook built at a
+    // different width can't be compared and is discarded on load rather than silently mismatched.
+    private const int FingerprintCoefficients = 13;
+
     private readonly PerceptionStream _stream;
     private readonly HearingOptions _hearing;
     private readonly CochleaOptions _cochlea;
     private readonly PlaceBaselineOptions _baseline;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<AudioSense> _logger;
 
     public AudioSense(
@@ -27,12 +33,14 @@ public sealed class AudioSense : BackgroundService
         IOptions<HearingOptions> hearing,
         IOptions<CochleaOptions> cochlea,
         IOptions<PlaceBaselineOptions> baseline,
+        IServiceScopeFactory scopeFactory,
         ILogger<AudioSense> logger)
     {
         _stream = stream;
         _hearing = hearing.Value;
         _cochlea = cochlea.Value;
         _baseline = baseline.Value;
+        _scopeFactory = scopeFactory;
         _logger = logger;
     }
 
@@ -81,9 +89,15 @@ public sealed class AudioSense : BackgroundService
 
         // Identity: fingerprint each episode (pitch-robust MFCC of its mean spectrum) and cluster
         // into recurring sound-units, so a perception can carry "the same sound again." Coarse
-        // (voice/source grain, not words) and in-memory for now — units reset when the Mind restarts.
-        var fingerprint = new MfccFingerprint(cochlea.Bands, coefficients: 13);
-        var units = new SoundUnitCodebook(vigilance: 0.9, capacity: 128);
+        // (voice/source grain, not words). The codebook is restored from disk so a unit id means the
+        // same sound as last run — that's what keeps the facts built on those ids meaningful.
+        var fingerprint = new MfccFingerprint(cochlea.Bands, coefficients: FingerprintCoefficients);
+        var restored = await LoadCodebookAsync(stoppingToken);
+        var units = new SoundUnitCodebook(vigilance: 0.9, capacity: 128, restore: restored);
+        if (units.UnitCount > 0)
+        {
+            _logger.LogInformation("Recalled {Units} known sound-unit(s) from before.", units.UnitCount);
+        }
 
         var sourceLabel = useMic ? "audio:mic" : $"audio:{Path.GetFileNameWithoutExtension(_hearing.SourcePath)}";
 
@@ -122,6 +136,9 @@ public sealed class AudioSense : BackgroundService
                     if (detector.Observe(frame) is { } episode)
                     {
                         Emit(episode, startedAt, sourceLabel, fingerprint, units);
+                        // The codebook just changed (a unit matched or was minted). Persist it so the
+                        // repertoire — and the ids the facts are built on — survives a restart.
+                        await SaveCodebookAsync(units, stoppingToken);
                     }
                 }
                 catch (Exception ex)
@@ -152,6 +169,9 @@ public sealed class AudioSense : BackgroundService
                 {
                     Emit(tail, startedAt, sourceLabel, fingerprint, units);
                 }
+                // Persist the final state on the way out. CancellationToken.None so a graceful
+                // shutdown still commits the last of what was learned rather than aborting the write.
+                await SaveCodebookAsync(units, CancellationToken.None);
             }
             catch (Exception ex)
             {
@@ -163,6 +183,59 @@ public sealed class AudioSense : BackgroundService
             (source as IDisposable)?.Dispose(); // release the microphone, if that's what we opened
             _logger.LogInformation(
                 "Hearing finished. Heard {Frames} frames over {Elapsed}.", frameIndex, clock.Elapsed);
+        }
+    }
+
+    /// <summary>
+    /// Load the stored codebook, or return null to start fresh. A stored codebook whose fingerprint
+    /// width no longer matches (the cochlea or fingerprint was reconfigured) is discarded rather than
+    /// compared apples-to-oranges — every failure here is caught so hearing always starts.
+    /// </summary>
+    private async Task<CodebookSnapshot?> LoadCodebookAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var store = scope.ServiceProvider.GetRequiredService<ICodebookStore>();
+            var snapshot = await store.LoadAsync(stoppingToken);
+
+            if (snapshot is null || snapshot.Prototypes.Length == 0)
+            {
+                return null; // first run, or nothing learned yet
+            }
+
+            if (!snapshot.Prototypes.All(p => p.Length == FingerprintCoefficients))
+            {
+                _logger.LogWarning(
+                    "Stored codebook was built at a different fingerprint width; starting fresh so unit ids aren't mismatched.");
+                return null;
+            }
+
+            return snapshot;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Could not load the stored codebook. Starting with an empty repertoire.");
+            return null;
+        }
+    }
+
+    /// <summary>Persist the codebook. Guarded: a storage hiccup must never stop the Mind hearing.</summary>
+    private async Task SaveCodebookAsync(SoundUnitCodebook units, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var store = scope.ServiceProvider.GetRequiredService<ICodebookStore>();
+            await store.SaveAsync(units.Snapshot(), cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutting down mid-save — the next run's load simply sees the previous good state.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to persist the sound-unit codebook. Learning continues in memory.");
         }
     }
 

@@ -239,18 +239,29 @@ memory stream" the bus was built for.
   to origin (decision 2's "loses track of where it came from" — the fuzziness is
   built in, a feature).
 
-Honest dependency: durable facts about *units* across restarts need the sound-unit
-codebook to **persist** (unit ids stable run to run); today it is in-memory, so
-distillation is within-session until we persist it — a small related piece.
+Honest dependency, now met: durable facts about *units* across restarts need the
+sound-unit codebook to **persist** (unit ids stable run to run). It now does —
+Perception saves the codebook to its own `mind-perception-db` and restores it at
+startup (see increment 4 below), so "sound #3" is the same sound next run and the
+facts keyed on it keep their meaning. One repertoire for the whole Mind for now (not
+yet split by place); a stored codebook built at a different fingerprint width is
+discarded on load rather than mismatched.
 
 Build sub-order: (1) the service receives the memory stream *(built)*; (2) the
 distiller + pays-rent confidence over recurring units *(built)*; (3) the fact store +
-recall + seed-on-startup *(built)*; (4) persist the codebook for cross-session facts.
-With (1)–(3) done, facts now survive a restart of the Facts service. Full-stack
-restarts still reset the *meaning* of unit ids until (4), because Perception rebuilds
-its codebook from scratch — so "sound #3" may not be the same sound next run. (4)
-closes that: a persistent codebook makes the ids, and thus the durable facts, stable
-across sessions.
+recall + seed-on-startup *(built)*; (4) persist the codebook for cross-session facts
+*(built)*. All four done: facts survive a restart of the Facts service, and the unit
+ids they are keyed on survive a restart of Perception — so learning now compounds
+across sessions rather than starting blank each run.
+
+Increment 4 — persistent codebook: Perception gained its own store,
+`mind-perception-db` (table `codebook`, a single jsonb row of prototypes + counts).
+`AudioSense` restores it at startup so ids are stable, and writes it back after each
+salient episode (and once more on shutdown, so a graceful stop keeps the last of what
+was learned). Every load/save is guarded — a storage hiccup never stops the Mind
+hearing; it just learns in memory until the store returns. Remaining edges: the
+per-episode write is simple, not throttled (fine at episode rates); and cross-*machine*
+stability isn't a goal here (the Postgres volume is per machine, like every other).
 
 ## Build order
 
@@ -284,8 +295,9 @@ across sessions.
 4. **Sound-units — perceptions gain identity** *(graduated, voice-grain — `AudioSense`)* —
    the live sense fingerprints each salient episode (MFCC of its mean spectrum) and
    clusters into a bounded strict codebook, so a `Perception` carries a `Unit` id: the
-   same id twice = *the same sound again*. In-memory for now (resets on restart;
-   persistence is a later refinement). Works at *voice/source* grain; **word identity
+   same id twice = *the same sound again*. The codebook is now **persisted** to
+   `mind-perception-db` and restored at startup, so ids are stable run to run (see
+   *Fact distillation*, increment 4). Works at *voice/source* grain; **word identity
    stays a confirmed wall** — audio reaches word *shape*, not *which word* (that needs
    grounding). Perceptions also carry a coarse `What` description now (see the audio
    section). See *Toward words*.

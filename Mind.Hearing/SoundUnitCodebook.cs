@@ -1,6 +1,14 @@
 namespace Mind.Hearing;
 
 /// <summary>
+/// A saved codebook: the unit prototypes and how often each has been matched. Enough to rebuild the
+/// same vocabulary with the same ids next run — the persistable state, nothing more.
+/// </summary>
+/// <param name="Prototypes">One vector per unit; index is the unit id.</param>
+/// <param name="Counts">Times each unit has been matched, aligned to <paramref name="Prototypes"/>.</param>
+public sealed record CodebookSnapshot(float[][] Prototypes, int[] Counts);
+
+/// <summary>
 /// A bounded codebook of sound-unit prototypes — how the Mind recognizes "the same sound again."
 /// Each episode fingerprint is matched to the nearest prototype; if it is similar enough (cosine
 /// &gt;= vigilance) it joins that unit and nudges the prototype a touch toward it, otherwise a new
@@ -21,7 +29,7 @@ public sealed class SoundUnitCodebook
     private readonly List<float[]> _prototypes = [];
     private readonly List<int> _counts = [];
 
-    public SoundUnitCodebook(double vigilance, int capacity, double learnRate = 0.2)
+    public SoundUnitCodebook(double vigilance, int capacity, double learnRate = 0.2, CodebookSnapshot? restore = null)
     {
         if (capacity <= 0)
         {
@@ -31,6 +39,11 @@ public sealed class SoundUnitCodebook
         _vigilance = vigilance;
         _capacity = capacity;
         _learnRate = learnRate;
+
+        if (restore is not null)
+        {
+            Restore(restore);
+        }
     }
 
     /// <summary>How many units exist so far.</summary>
@@ -38,6 +51,32 @@ public sealed class SoundUnitCodebook
 
     /// <summary>How many times each unit has been matched.</summary>
     public IReadOnlyList<int> Counts => _counts;
+
+    /// <summary>
+    /// The current state, cloned so callers can persist it without racing further learning. Feed it
+    /// back through the constructor next run and the same sounds keep the same unit ids.
+    /// </summary>
+    public CodebookSnapshot Snapshot() => new(
+        _prototypes.Select(p => (float[])p.Clone()).ToArray(),
+        _counts.ToArray());
+
+    private void Restore(CodebookSnapshot snapshot)
+    {
+        if (snapshot.Prototypes.Length != snapshot.Counts.Length)
+        {
+            throw new ArgumentException(
+                "Codebook snapshot is inconsistent: prototype and count lengths differ.", nameof(snapshot));
+        }
+
+        // Load units in id order (index = unit id), so an id means the same sound it did last run.
+        // Prototypes beyond capacity are still loaded — they exist, they just won't be added to; the
+        // caller is responsible for a stored unit's fingerprint matching today's fingerprint width.
+        for (var i = 0; i < snapshot.Prototypes.Length; i++)
+        {
+            _prototypes.Add((float[])snapshot.Prototypes[i].Clone());
+            _counts.Add(snapshot.Counts[i]);
+        }
+    }
 
     /// <summary>Assign a fingerprint to a unit id, learning or minting as needed.</summary>
     public int Assign(float[] fingerprint)

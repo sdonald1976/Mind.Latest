@@ -1,10 +1,17 @@
 using MassTransit;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Mind.Hearing;
 using Mind.Perception;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Perception's one piece of durable state: the sound-unit codebook. Persisting it (in its own
+// "mind-perception-db") is what keeps unit ids stable across restarts — so the facts built on those
+// ids stay meaningful session to session. The Aspire integration adds retries, health checks, telemetry.
+builder.AddNpgsqlDbContext<CodebookDbContext>("mind-perception-db");
+builder.Services.AddScoped<ICodebookStore, EfCodebookStore>();
 
 // --- Configuration: everything tunable, nothing magic. Validated on start so a
 //     bad value fails loudly and immediately rather than misbehaving quietly. ---
@@ -81,6 +88,23 @@ app.UseExceptionHandler(handler => handler.Run(async context =>
     context.Response.StatusCode = StatusCodes.Status500InternalServerError;
     await context.Response.WriteAsJsonAsync(new { error = "internal error" });
 }));
+
+// Make sure the codebook schema exists before the sense starts and tries to recall it. EnsureCreated
+// is fine while there is a single table; we move to EF migrations once the schema evolves (see DESIGN.md).
+await using (var scope = app.Services.CreateAsyncScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<CodebookDbContext>();
+    try
+    {
+        await db.Database.EnsureCreatedAsync();
+        log.LogInformation("Perception database ready.");
+    }
+    catch (Exception ex)
+    {
+        log.LogCritical(ex, "Failed to ensure the perception database exists.");
+        throw;
+    }
+}
 
 // Swagger UI at /swagger while developing.
 if (app.Environment.IsDevelopment())

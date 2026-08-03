@@ -12,6 +12,7 @@ var postgres = builder.AddPostgres("postgres", password: pgPassword).WithDataVol
 
 var memoryDb = postgres.AddDatabase("mind-memory-db");
 var factsDb = postgres.AddDatabase("mind-facts-db");
+var perceptionDb = postgres.AddDatabase("mind-perception-db");
 
 // Memory: consumes formed-memory messages, stores them, and serves recall.
 var memory = builder.AddProject<Projects.Mind_Memory>("mind-memory")
@@ -24,7 +25,9 @@ var memory = builder.AddProject<Projects.Mind_Memory>("mind-memory")
 // salience departs from and returns to idle, and publishes each finished memory
 // to the bus. It no longer talks to Memory directly — the broker decouples them.
 builder.AddProject<Projects.Mind_Perception>("mind-perception")
+    .WithReference(perceptionDb)
     .WithReference(rabbitmq)
+    .WaitFor(perceptionDb)
     .WaitFor(rabbitmq);
 
 // Facts: subscribes to the same memory stream and distils standing facts from it
