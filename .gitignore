@@ -11,3 +11,4 @@
 # User-specific / secrets — never commit.
 *.user
 appsettings.*.local.json
+/Mind.Perception/clips
