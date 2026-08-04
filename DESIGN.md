@@ -302,9 +302,14 @@ stability isn't a goal here (the Postgres volume is per machine, like every othe
    (`Hearing:Source = "mic"` in the committed Development config): a Mind that lives
    in time hears its world, not a file replay. File mode is an explicit opt-in — set
    `Source: "file"` and a `SourcePath` locally (machine-specific, so kept out of the
-   shared config). Note: `Source` on a perception (e.g. `audio:mic`, `audio:Elmo`)
-   names the *sense/source*, the same for a whole run by design; a sound's own
-   character is `What` (loud/tonal/bright…) and its identity is `Unit`.
+   shared config). **Which** mic is chosen by name — `Hearing:MicName`, a
+   case-insensitive substring of the device's product name — because there's rarely
+   just one (several per machine) and indices aren't portable across machines or
+   reboots; `MicDevice` (index) is the fallback. The devices found are logged at
+   startup so you can see what to name, and an unmatched name falls back to the first
+   input with a warning. Note: `Source` on a perception (e.g. `audio:mic`,
+   `audio:Elmo`) names the *sense/source*, the same for a whole run by design; a
+   sound's own character is `What` (loud/tonal/bright…) and its identity is `Unit`.
 4. **Sound-units — perceptions gain identity** *(graduated, voice-grain — `AudioSense`)* —
    the live sense fingerprints each salient episode (MFCC of its mean spectrum) and
    clusters into a bounded strict codebook, so a `Perception` carries a `Unit` id: the
@@ -337,7 +342,11 @@ stability isn't a goal here (the Postgres volume is per machine, like every othe
 - **Facts / semantic knowledge** and the distillation machine that makes them.
 - **More senses — video, then camera** — each its own fixed front-end, tuned
   per input, one sense at a time (never all at once). Audio comes first as its
-  own piece; these follow the same way.
+  own piece; these follow the same way. Device selection is by *name*, as the
+  microphone already is (there's rarely just one — several mics and cameras per
+  machine): the camera to open will be chosen by a name substring in config, the
+  devices logged at startup, the same shape as `Hearing:MicName`. Not built until
+  the vision sense is — no dead config for a device nothing yet reads.
 - **Live audio** — swap the file source for a microphone behind the same seam,
   then the quiet-room place-baseline test (decision 7's purest form).
 - **Stable sound-units / naming** — moving audio salience from *that something

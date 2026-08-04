@@ -62,9 +62,19 @@ public sealed class AudioSense : BackgroundService
         IAudioSource source;
         try
         {
-            source = useMic
-                ? new MicAudioSource(_hearing.SampleRate, _hearing.MicDevice)
-                : FileAudioSource.Load(_hearing.SourcePath!, _hearing.SampleRate, _hearing.Seconds);
+            if (useMic)
+            {
+                var mic = OpenMicrophone();
+                if (mic is null)
+                {
+                    return; // no usable input device; reason already logged
+                }
+                source = mic;
+            }
+            else
+            {
+                source = FileAudioSource.Load(_hearing.SourcePath!, _hearing.SampleRate, _hearing.Seconds);
+            }
         }
         catch (Exception ex)
         {
@@ -184,6 +194,39 @@ public sealed class AudioSense : BackgroundService
             _logger.LogInformation(
                 "Hearing finished. Heard {Frames} frames over {Elapsed}.", frameIndex, clock.Elapsed);
         }
+    }
+
+    /// <summary>
+    /// Open the configured microphone. Logs every input device the system reports (so you can see what
+    /// to name), resolves the choice by name then index, and falls back to the first input with a
+    /// warning if nothing matched. Returns null only when there is no input device at all.
+    /// </summary>
+    private MicAudioSource? OpenMicrophone()
+    {
+        var devices = MicAudioSource.ListDevices();
+        if (devices.Count == 0)
+        {
+            _logger.LogError("Hearing is set to 'mic' but the system reports no input devices. Hearing will not start.");
+            return null;
+        }
+
+        _logger.LogInformation("Input devices: {Devices}.",
+            string.Join("; ", devices.Select(d => $"[{d.Index}] {d.Name}")));
+
+        var chosen = MicAudioSource.Resolve(devices, _hearing.MicName, _hearing.MicDevice);
+        if (chosen is null)
+        {
+            var asked = string.IsNullOrWhiteSpace(_hearing.MicName)
+                ? $"device index {_hearing.MicDevice}"
+                : $"name matching '{_hearing.MicName}'";
+            var fallback = devices[0];
+            _logger.LogWarning("No input matched {Asked}; falling back to [{Index}] {Name}.",
+                asked, fallback.Index, fallback.Name);
+            chosen = fallback;
+        }
+
+        _logger.LogInformation("Listening on microphone [{Index}] {Name}.", chosen.Value.Index, chosen.Value.Name);
+        return new MicAudioSource(_hearing.SampleRate, chosen.Value.Index);
     }
 
     /// <summary>

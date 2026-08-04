@@ -2,6 +2,13 @@ using NAudio.Wave;
 
 namespace Mind.Hearing;
 
+/// <summary>An input device the system reports: its index and product name.</summary>
+/// <remarks>
+/// The name comes from the legacy WaveIn (MME) API, which caps product names at 31 characters — so a
+/// long name may arrive truncated. Substring matching still works against the truncated form.
+/// </remarks>
+public readonly record struct MicDeviceInfo(int Index, string Name);
+
 /// <summary>
 /// A live microphone as an <see cref="IAudioSource"/> — the same seam a file uses, so everything
 /// downstream (cochlea, ear, place-baseline) is identical whether the Mind hears a recording or the
@@ -18,6 +25,49 @@ public sealed class MicAudioSource : IAudioSource, IDisposable
     private bool _stopped;
 
     public int SampleRate { get; }
+
+    /// <summary>The input devices the system reports, by index and product name — so a config can name one.</summary>
+    public static IReadOnlyList<MicDeviceInfo> ListDevices()
+    {
+        var devices = new List<MicDeviceInfo>();
+        for (var i = 0; i < WaveInEvent.DeviceCount; i++)
+        {
+            devices.Add(new MicDeviceInfo(i, WaveInEvent.GetCapabilities(i).ProductName));
+        }
+        return devices;
+    }
+
+    /// <summary>
+    /// Pick which device to open. A non-empty <paramref name="name"/> wins — the first device whose
+    /// product name contains it (case-insensitive) — otherwise the explicit <paramref name="index"/>.
+    /// Returns <c>null</c> when a name was asked for but nothing matched, or the index is out of range,
+    /// so the caller can fall back and report it rather than silently opening the wrong microphone.
+    /// </summary>
+    public static MicDeviceInfo? Resolve(IReadOnlyList<MicDeviceInfo> devices, string? name, int index)
+    {
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            foreach (var device in devices)
+            {
+                if (device.Name.Contains(name, StringComparison.OrdinalIgnoreCase))
+                {
+                    return device;
+                }
+            }
+
+            return null; // asked by name, none matched
+        }
+
+        foreach (var device in devices)
+        {
+            if (device.Index == index)
+            {
+                return device;
+            }
+        }
+
+        return null; // index out of range
+    }
 
     public MicAudioSource(int sampleRate = 16_000, int deviceNumber = 0)
     {

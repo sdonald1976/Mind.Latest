@@ -17,8 +17,21 @@ public sealed class HearingOptions
     /// <summary>Where the sound comes from: <c>"file"</c> (default) or <c>"mic"</c> (a live microphone).</summary>
     public string Source { get; set; } = "file";
 
-    /// <summary>Which capture device when <see cref="Source"/> is "mic". 0 is the system default input.</summary>
+    /// <summary>
+    /// Which capture device when <see cref="Source"/> is "mic", by index. 0 is the system default
+    /// input. Indices are not portable — the same number is a different device on another machine, and
+    /// can shuffle across reboots — so prefer <see cref="MicName"/>; this is the fallback.
+    /// </summary>
     public int MicDevice { get; set; }
+
+    /// <summary>
+    /// Which microphone to open, chosen by name: a case-insensitive substring of the device's product
+    /// name (e.g. "Yeti", "Webcam"). Takes precedence over <see cref="MicDevice"/> when set, because
+    /// names carry across machines and reboots where indices do not. The devices found are logged at
+    /// startup so you can see what to name; if nothing matches, the Mind falls back to the first input
+    /// and says so.
+    /// </summary>
+    public string? MicName { get; set; }
 
     /// <summary>
     /// The audio file, when <see cref="Source"/> is "file" — an MP4's track is extracted to mono with
