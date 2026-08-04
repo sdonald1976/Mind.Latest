@@ -5,9 +5,9 @@ namespace Mind.Perception;
 /// <summary>Postgres-backed <see cref="IClipStore"/> over EF Core.</summary>
 public sealed class EfClipStore : IClipStore
 {
-    private readonly PerceptionDbContext _db;
+    private readonly ClipDbContext _db;
 
-    public EfClipStore(PerceptionDbContext db) => _db = db;
+    public EfClipStore(ClipDbContext db) => _db = db;
 
     public async Task AddAsync(StoredClip clip, CancellationToken cancellationToken = default)
     {

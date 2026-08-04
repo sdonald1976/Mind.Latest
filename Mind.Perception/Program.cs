@@ -12,6 +12,10 @@ var builder = WebApplication.CreateBuilder(args);
 // ids stay meaningful session to session. The Aspire integration adds retries, health checks, telemetry.
 builder.AddNpgsqlDbContext<PerceptionDbContext>("mind-perception-db");
 builder.Services.AddScoped<ICodebookStore, EfCodebookStore>();
+
+// The saved-clip catalogue lives in its own database, so its schema is created whole (and can grow
+// and be pruned) independently of the codebook.
+builder.AddNpgsqlDbContext<ClipDbContext>("mind-clips-db");
 builder.Services.AddScoped<IClipStore, EfClipStore>();
 
 // --- Configuration: everything tunable, nothing magic. Validated on start so a
@@ -95,14 +99,16 @@ app.UseExceptionHandler(handler => handler.Run(async context =>
 await using (var scope = app.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<PerceptionDbContext>();
+    var clipsDb = scope.ServiceProvider.GetRequiredService<ClipDbContext>();
     try
     {
         await db.Database.EnsureCreatedAsync();
-        log.LogInformation("Perception database ready.");
+        await clipsDb.Database.EnsureCreatedAsync();
+        log.LogInformation("Perception databases ready.");
     }
     catch (Exception ex)
     {
-        log.LogCritical(ex, "Failed to ensure the perception database exists.");
+        log.LogCritical(ex, "Failed to ensure the perception databases exist.");
         throw;
     }
 }

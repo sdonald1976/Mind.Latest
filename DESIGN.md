@@ -286,9 +286,11 @@ starts).
   (plus a little pre-roll) is sliced back out and written as a WAV. Verified
   end-to-end: the slice lands on the sound at full amplitude.
 - **Files + a catalogue.** The WAV is a file on disk (playable in anything —
-  labelling by ear needs no bespoke UI yet); a `clips` row in `mind-perception-db`
-  records unit / time / duration / path and a `Label` column that starts null. The
-  `Perception` carries a `ClipId` so a memory points back to its audio. The bytes
+  labelling by ear needs no bespoke UI yet); a `clips` row records unit / time /
+  duration / path and a `Label` column that starts null. The catalogue lives in its
+  own database, `mind-clips-db` (separate from the codebook's `mind-perception-db`, so
+  each schema is created whole by `EnsureCreated` and grows/prunes on its own terms).
+  The `Perception` carries a `ClipId` so a memory points back to its audio. The bytes
   never ride the bus — only the reference does.
 - **Per salient episode** (per `Unit`), not per whole memory: that's the grain you'd
   teach, and it keeps clips small (~30 KB/s). Configurable: `Hearing:SaveClips`
