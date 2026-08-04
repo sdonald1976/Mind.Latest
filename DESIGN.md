@@ -298,7 +298,13 @@ stability isn't a goal here (the Postgres volume is per machine, like every othe
    one file (the `Mind.Hearing.Tuner` bench). **Proven live:** the Mind heard a
    minute of a real video and formed a durable memory of it — a bundle of `sound`
    perceptions, each carrying its salience — decision 7, real. See *The first
-   sense: audio*.
+   sense: audio*. The default dev sense is now the **live microphone**
+   (`Hearing:Source = "mic"` in the committed Development config): a Mind that lives
+   in time hears its world, not a file replay. File mode is an explicit opt-in — set
+   `Source: "file"` and a `SourcePath` locally (machine-specific, so kept out of the
+   shared config). Note: `Source` on a perception (e.g. `audio:mic`, `audio:Elmo`)
+   names the *sense/source*, the same for a whole run by design; a sound's own
+   character is `What` (loud/tonal/bright…) and its identity is `Unit`.
 4. **Sound-units — perceptions gain identity** *(graduated, voice-grain — `AudioSense`)* —
    the live sense fingerprints each salient episode (MFCC of its mean spectrum) and
    clusters into a bounded strict codebook, so a `Perception` carries a `Unit` id: the
