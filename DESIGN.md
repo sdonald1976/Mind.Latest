@@ -98,6 +98,13 @@ can be tweaked and extended without tangling the others. Services never share
 types by copy — they share them through one contracts project, and nothing
 depends back on a service.
 
+Developer visibility: the AppHost adds **pgweb** to the Postgres server (Aspire's
+`WithPgWeb()`) — a browser admin UI, on the dashboard, that browses and edits every
+database (memories, facts, codebook). It's the standard tool, wired in one line; we
+don't hand-roll CRUD. A *Mind-native* dashboard (state in its own terms — recent
+memories, known-sound facts, the repertoire) is a separate, worthwhile build later,
+and a read view, not raw table CRUD.
+
 ```
 Mind.AppHost      Orchestrates everything: RabbitMQ, Postgres, the services.
 Mind.Contracts    Shared vocabulary: Perception, Memory, MemoryFormed (message).

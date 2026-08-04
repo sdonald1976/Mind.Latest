@@ -8,7 +8,14 @@ var rabbitmq = builder.AddRabbitMQ("rabbitmq")
     .WithManagementPlugin();
 
 var pgPassword = builder.AddParameter("postgres-password", secret: true);
-var postgres = builder.AddPostgres("postgres", password: pgPassword).WithDataVolume();
+
+// Postgres for the Mind's durable state, with a browser admin UI so the databases aren't a black box.
+// pgweb is a lightweight container Aspire wires to this server automatically — it appears in the
+// dashboard and browses/edits every database (memories, facts, codebook) with no code of our own.
+// Swap WithPgWeb() for WithPgAdmin() if you want the heavier full-management console instead.
+var postgres = builder.AddPostgres("postgres", password: pgPassword)
+    .WithDataVolume()
+    .WithPgWeb();
 
 var memoryDb = postgres.AddDatabase("mind-memory-db");
 var factsDb = postgres.AddDatabase("mind-facts-db");
