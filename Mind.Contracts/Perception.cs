@@ -18,9 +18,16 @@ namespace Mind.Contracts;
 /// perception was matched to. The same id twice means "the same sound again." Null when unknown (a
 /// manual poke, or a sense that doesn't cluster). Coarse — voice/source grain, not words.
 /// </param>
+/// <param name="ClipId">
+/// A pointer to the raw sensory clip this perception was distilled from, when the sense kept one — so
+/// the moment can be replayed and labelled later (the on-ramp to grounding). Null when nothing was
+/// saved (a manual poke, or clip-saving off). The clip itself lives with the sense that produced it,
+/// not in this message.
+/// </param>
 public sealed record Perception(
     string What,
     DateTimeOffset At,
     double Intensity = 1.0,
     string? Source = null,
-    int? Unit = null);
+    int? Unit = null,
+    Guid? ClipId = null);

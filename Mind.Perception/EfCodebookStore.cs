@@ -6,9 +6,9 @@ namespace Mind.Perception;
 /// <summary>Postgres-backed <see cref="ICodebookStore"/> over EF Core.</summary>
 public sealed class EfCodebookStore : ICodebookStore
 {
-    private readonly CodebookDbContext _db;
+    private readonly PerceptionDbContext _db;
 
-    public EfCodebookStore(CodebookDbContext db) => _db = db;
+    public EfCodebookStore(PerceptionDbContext db) => _db = db;
 
     public async Task<CodebookSnapshot?> LoadAsync(CancellationToken cancellationToken = default)
     {

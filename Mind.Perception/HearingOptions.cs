@@ -48,4 +48,20 @@ public sealed class HearingOptions
     /// rather than a whole 40-minute clip while we settle in. Null takes the whole source.
     /// </summary>
     public double? Seconds { get; set; }
+
+    /// <summary>
+    /// Whether to save a short WAV of each salient episode, catalogued for later labelling. On by
+    /// default — the saved clips are the raw material for teaching the Mind what its sounds are.
+    /// </summary>
+    public bool SaveClips { get; set; } = true;
+
+    /// <summary>
+    /// Where clip WAVs are written. Relative paths are under the service's working directory. Clips are
+    /// local to the machine that heard them.
+    /// </summary>
+    public string ClipPath { get; set; } = "clips";
+
+    /// <summary>Longest clip to keep, in seconds — a rare very long episode is truncated to this.</summary>
+    [Range(0.5, 120)]
+    public double MaxClipSeconds { get; set; } = 12;
 }

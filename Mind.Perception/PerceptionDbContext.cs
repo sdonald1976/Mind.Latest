@@ -7,18 +7,20 @@ using Mind.Hearing;
 namespace Mind.Perception;
 
 /// <summary>
-/// EF Core context for Perception's durable state: the sound-unit codebook. One table, <c>codebook</c>,
-/// holding a single row whose prototypes/counts live in a jsonb document. Persisting this is what makes
-/// unit ids stable across restarts — "sound #3" stays the same sound — so the facts keyed on those ids
-/// (in Mind.Facts) keep their meaning session to session.
+/// EF Core context for Perception's durable state, in <c>mind-perception-db</c>. Two tables:
+/// <c>codebook</c> (the sound-unit repertoire — a single jsonb row, so unit ids are stable across
+/// restarts) and <c>clips</c> (the catalogue of saved sensory clips, one row per salient episode,
+/// carrying the human label that teaches the Mind what a sound is).
 /// </summary>
-public sealed class CodebookDbContext : DbContext
+public sealed class PerceptionDbContext : DbContext
 {
-    public CodebookDbContext(DbContextOptions<CodebookDbContext> options) : base(options)
+    public PerceptionDbContext(DbContextOptions<PerceptionDbContext> options) : base(options)
     {
     }
 
     public DbSet<StoredCodebook> Codebooks => Set<StoredCodebook>();
+
+    public DbSet<StoredClip> Clips => Set<StoredClip>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -51,6 +53,23 @@ public sealed class CodebookDbContext : DbContext
                 .HasConversion(snapshotConverter, snapshotComparer)
                 .HasColumnType("jsonb")
                 .IsRequired();
+        });
+
+        modelBuilder.Entity<StoredClip>(entity =>
+        {
+            entity.ToTable("clips");
+            entity.HasKey(c => c.Id);
+            entity.Property(c => c.Id).ValueGeneratedNever();
+            entity.Property(c => c.Unit);
+            entity.Property(c => c.CapturedAt);
+            entity.Property(c => c.Seconds);
+            entity.Property(c => c.SampleRate);
+            entity.Property(c => c.Path).IsRequired();
+            entity.Property(c => c.Label);
+            entity.Property(c => c.LabeledAt);
+            // Browsing and labelling both go by unit and by recency.
+            entity.HasIndex(c => c.Unit);
+            entity.HasIndex(c => c.CapturedAt);
         });
     }
 }

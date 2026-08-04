@@ -270,6 +270,35 @@ hearing; it just learns in memory until the store returns. Remaining edges: the
 per-episode write is simple, not throttled (fine at episode rates); and cross-*machine*
 stability isn't a goal here (the Postgres volume is per machine, like every other).
 
+## Saved clips: the raw material for teaching (built)
+
+A memory records *that* a sound happened and *what it was like*, but the audio itself
+used to be gone — heard, reduced to features, discarded. Now each salient episode's
+audio is kept as a short WAV, so a heard moment can be replayed and, crucially,
+**labelled**. A human label on a clip ("that #3 is a door knock") is the supervised
+signal that turns a bare recurring unit into *meaning* — this is the on-ramp to
+grounding (decision: grounding needs a teaching signal; saved clips are where it
+starts).
+
+- **Captured in Perception**, where the raw audio still exists. A `RecordingTap`
+  wraps the audio source and keeps a rolling buffer of recent samples, touching the
+  cochlea/DSP not at all; when `PlaceBaseline` closes an episode, its `[Start, End]`
+  (plus a little pre-roll) is sliced back out and written as a WAV. Verified
+  end-to-end: the slice lands on the sound at full amplitude.
+- **Files + a catalogue.** The WAV is a file on disk (playable in anything —
+  labelling by ear needs no bespoke UI yet); a `clips` row in `mind-perception-db`
+  records unit / time / duration / path and a `Label` column that starts null. The
+  `Perception` carries a `ClipId` so a memory points back to its audio. The bytes
+  never ride the bus — only the reference does.
+- **Per salient episode** (per `Unit`), not per whole memory: that's the grain you'd
+  teach, and it keeps clips small (~30 KB/s). Configurable: `Hearing:SaveClips`
+  (default on), `ClipPath`, `MaxClipSeconds` (a rare long episode is truncated).
+  Guarded end to end — a clip that can't be written never stops the Mind hearing.
+- **Local to the machine that heard them**, like the codebook and the DB volume.
+- Open next: a small browser to play a clip and type its label (pairs with the
+  Mind-native dashboard), and then the labels feeding grounding. Retention/pruning
+  (clips grow unbounded) is a later knob — kept simple on purpose for now.
+
 ## Build order
 
 1. **The heartbeat** *(built — `Mind.Perception`)* — always-on, runs in time

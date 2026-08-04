@@ -21,6 +21,9 @@ public sealed class AudioSense : BackgroundService
     // different width can't be compared and is discarded on load rather than silently mismatched.
     private const int FingerprintCoefficients = 13;
 
+    // A touch of lead-in on a saved clip, so its attack isn't cut off when you play it back.
+    private const double ClipPreRollSeconds = 0.1;
+
     private readonly PerceptionStream _stream;
     private readonly HearingOptions _hearing;
     private readonly CochleaOptions _cochlea;
@@ -80,6 +83,19 @@ public sealed class AudioSense : BackgroundService
         {
             _logger.LogError(ex, "Could not open the audio source. Hearing will not start.");
             return;
+        }
+
+        // Keep a rolling buffer of recent raw audio, so each salient episode can be sliced back out and
+        // saved as a listenable clip. Sized to the longest clip we'd keep plus the detector's hold, so
+        // an episode's audio is still retained at the moment it closes. Absent when not saving clips.
+        RecordingTap? tap = null;
+        if (_hearing.SaveClips)
+        {
+            var capacitySamples = (int)Math.Ceiling(
+                (_hearing.MaxClipSeconds + _baseline.HoldSeconds + 1.0) * source.SampleRate);
+            tap = new RecordingTap(source, capacitySamples);
+            source = tap;
+            _logger.LogInformation("Saving episode clips to {ClipDir}.", Path.GetFullPath(_hearing.ClipPath));
         }
 
         // The cochlea's rate must match the source we actually loaded; everything else is config.
@@ -145,7 +161,8 @@ public sealed class AudioSense : BackgroundService
                 {
                     if (detector.Observe(frame) is { } episode)
                     {
-                        Emit(episode, startedAt, sourceLabel, fingerprint, units);
+                        await EmitAsync(episode, startedAt, sourceLabel, fingerprint, units,
+                            tap, source.SampleRate, ear.FftSize, stoppingToken);
                         // The codebook just changed (a unit matched or was minted). Persist it so the
                         // repertoire — and the ids the facts are built on — survives a restart.
                         await SaveCodebookAsync(units, stoppingToken);
@@ -177,7 +194,8 @@ public sealed class AudioSense : BackgroundService
             {
                 if (detector.Flush() is { } tail)
                 {
-                    Emit(tail, startedAt, sourceLabel, fingerprint, units);
+                    await EmitAsync(tail, startedAt, sourceLabel, fingerprint, units,
+                        tap, source.SampleRate, ear.FftSize, CancellationToken.None);
                 }
                 // Persist the final state on the way out. CancellationToken.None so a graceful
                 // shutdown still commits the last of what was learned rather than aborting the write.
@@ -282,26 +300,38 @@ public sealed class AudioSense : BackgroundService
         }
     }
 
-    private void Emit(
+    private async Task EmitAsync(
         SalientEpisode episode,
         DateTimeOffset startedAt,
         string sourceLabel,
         MfccFingerprint fingerprint,
-        SoundUnitCodebook units)
+        SoundUnitCodebook units,
+        RecordingTap? tap,
+        int sampleRate,
+        int fftSize,
+        CancellationToken cancellationToken)
     {
         // Identity: which recurring sound-unit is this? Same id again = "the same sound."
         var unit = units.Assign(fingerprint.Compute([episode.MeanMel]));
         var timesHeard = units.Counts[unit];
+        var at = startedAt + episode.Start;
+
+        // Keep a listenable clip of this moment (if we're saving them) and link the perception to it,
+        // so it can be replayed and labelled later — the raw material for teaching.
+        var clipId = tap is null
+            ? null
+            : await SaveClipAsync(episode, unit, at, tap, sampleRate, fftSize, cancellationToken);
 
         // `What` describes what the sound was *like* (loud/tonal/bright...), not what it *was*.
-        // Unit carries coarse identity; Intensity the salience; Source the sense.
+        // Unit carries coarse identity; Intensity the salience; Source the sense; ClipId the recording.
         var what = SoundDescriptor.Describe(episode.Character);
         var perception = new Mind.Contracts.Perception(
             What: what,
-            At: startedAt + episode.Start,
+            At: at,
             Intensity: episode.PeakSalience,
             Source: sourceLabel,
-            Unit: unit);
+            Unit: unit,
+            ClipId: clipId);
 
         if (_stream.Submit(perception))
         {
@@ -313,6 +343,69 @@ public sealed class AudioSense : BackgroundService
         else
         {
             _logger.LogWarning("Perception stream refused a heard sound (shutting down?).");
+        }
+    }
+
+    /// <summary>
+    /// Slice this episode's audio out of the recording tap, write it as a WAV, and catalogue the row —
+    /// so the moment can be replayed and labelled later. Returns the clip id, or null if nothing was
+    /// saved. Guarded end to end: a clip that can't be written must never stop the Mind hearing.
+    /// </summary>
+    private async Task<Guid?> SaveClipAsync(
+        SalientEpisode episode,
+        int unit,
+        DateTimeOffset at,
+        RecordingTap tap,
+        int sampleRate,
+        int fftSize,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Map episode time to raw sample indices. A little pre-roll keeps the attack; one analysis
+            // window of tail includes the last salient frame in full. Cap the span so a rare long
+            // episode can't write a huge file.
+            var from = (long)((episode.Start.TotalSeconds - ClipPreRollSeconds) * sampleRate);
+            var to = (long)(episode.End.TotalSeconds * sampleRate) + fftSize;
+            var maxSamples = (long)(_hearing.MaxClipSeconds * sampleRate);
+            if (to - from > maxSamples)
+            {
+                to = from + maxSamples;
+            }
+
+            var samples = tap.Slice(from, to);
+            if (samples.Length == 0)
+            {
+                return null; // nothing retained to save — skip quietly
+            }
+
+            var id = Guid.NewGuid();
+            var fileName = $"{at:yyyy-MM-dd'T'HH-mm-ss-fff}_unit{unit}_{id:N}.wav";
+            var path = Path.GetFullPath(Path.Combine(_hearing.ClipPath, fileName));
+            WavWriter.WriteMono(path, samples, sampleRate);
+
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var store = scope.ServiceProvider.GetRequiredService<IClipStore>();
+            await store.AddAsync(new StoredClip
+            {
+                Id = id,
+                Unit = unit,
+                CapturedAt = at,
+                Seconds = samples.Length / (double)sampleRate,
+                SampleRate = sampleRate,
+                Path = path,
+            }, cancellationToken);
+
+            return id;
+        }
+        catch (OperationCanceledException)
+        {
+            return null; // shutting down mid-save — the perception just goes out without a clip link
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to save a clip of the heard sound. The perception is kept without one.");
+            return null;
         }
     }
 }

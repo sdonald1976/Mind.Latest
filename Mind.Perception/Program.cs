@@ -10,8 +10,9 @@ var builder = WebApplication.CreateBuilder(args);
 // Perception's one piece of durable state: the sound-unit codebook. Persisting it (in its own
 // "mind-perception-db") is what keeps unit ids stable across restarts — so the facts built on those
 // ids stay meaningful session to session. The Aspire integration adds retries, health checks, telemetry.
-builder.AddNpgsqlDbContext<CodebookDbContext>("mind-perception-db");
+builder.AddNpgsqlDbContext<PerceptionDbContext>("mind-perception-db");
 builder.Services.AddScoped<ICodebookStore, EfCodebookStore>();
+builder.Services.AddScoped<IClipStore, EfClipStore>();
 
 // --- Configuration: everything tunable, nothing magic. Validated on start so a
 //     bad value fails loudly and immediately rather than misbehaving quietly. ---
@@ -93,7 +94,7 @@ app.UseExceptionHandler(handler => handler.Run(async context =>
 // is fine while there is a single table; we move to EF migrations once the schema evolves (see DESIGN.md).
 await using (var scope = app.Services.CreateAsyncScope())
 {
-    var db = scope.ServiceProvider.GetRequiredService<CodebookDbContext>();
+    var db = scope.ServiceProvider.GetRequiredService<PerceptionDbContext>();
     try
     {
         await db.Database.EnsureCreatedAsync();
@@ -123,6 +124,10 @@ app.MapGet("/", (IOptions<HeartbeatOptions> options) => Results.Ok(new
     tickMs = options.Value.TickIntervalMs,
     idleMs = options.Value.IdleTimeoutMs,
 }));
+
+// The saved sensory clips, most recent first — the catalogue to label for teaching. The WAVs
+// themselves are the files at each row's Path; this lists the index.
+app.MapGet("/clips", async (IClipStore clips) => Results.Ok(await clips.RecentAsync(200)));
 
 // Something happened to the Mind.
 app.MapPost("/perceive", (PerceiveRequest request, PerceptionStream stream, ILogger<Program> logger) =>
